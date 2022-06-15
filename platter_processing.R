@@ -38,6 +38,7 @@ platter_df %>%
 
 
 #scanned file
+file_scanned <- "pp_scan_sampler_14_d220510"
 
 #rotate scanned file 
 
