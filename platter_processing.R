@@ -6,7 +6,13 @@ library(dplyr)
 library(readr)
 library(raster)
 library(terra)
-library(NISTunits)
+library(NISTunits) #install.packages("NISTunits")
+library(here)
+library(purrr)
+library(ggplot2)
+
+setwd("C:/Users/danka/Box")
+here::i_am("katz_photo.jpg")
 
 
 #sampler number
@@ -45,10 +51,13 @@ platter_df <- platter_df %>%
 
 
 #scanned file
-file_scanned <- "pp_scan_sampler9_d220624_r.tif"
-file_path <- "C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/platter_scans/processed_scan/"
+# file_scanned <- "pp_scan_sampler9_d220624_r.tif"
+# file_path <- "C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/platter_scans/processed_scan/"
+#here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "platter_scans", "processed_scan", "pp_scan_sampler9_d220624_r.tif")
 #rotated_image_r <- raster::stack("C:/Users/dsk273/Desktop/pp_scan_sampler_14_d220510_c.tif")
-rotated_image <- terra::rast(paste0(file_path, file_scanned))
+rotated_image <- terra::rast(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "platter_scans", "processed_scan", 
+                                  "pp_scan_sampler9_d220624_r.tif"))
+#rotated_image <- terra::rast(paste0(file_path, file_scanned))
 crs(rotated_image) <- NA
 terra::ext(rotated_image) <- c(0, ncol(rotated_image), 0, nrow(rotated_image))
 plot(rotated_image)
@@ -66,21 +75,21 @@ platter_df <- platter_df %>%
     outer_points_y_start = platter_centroid_y + platter_dist_outer * sin(NISTdegTOradian(platter_df$angle_start)),
     inner_points_x_start = platter_centroid_x + platter_dist_inner * cos(NISTdegTOradian(platter_df$angle_start)),#inner points of the focal slot
     inner_points_y_start = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_start)),
-    outer_points_x_end = platter_centroid_x + platter_dist_outer * cos(NISTdegTOradian(platter_df$angle_end)), #outer points of the focal slot
-    outer_points_y_end = platter_centroid_y + platter_dist_outer * sin(NISTdegTOradian(platter_df$angle_end)),
-    inner_points_x_end = platter_centroid_x + platter_dist_inner * cos(NISTdegTOradian(platter_df$angle_end)),#inner points of the focal slot
-    inhner_points_y_end = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_end)))
+    outer_points_x_end   = platter_centroid_x + platter_dist_outer * cos(NISTdegTOradian(platter_df$angle_end)), #outer points of the focal slot
+    outer_points_y_end   = platter_centroid_y + platter_dist_outer * sin(NISTdegTOradian(platter_df$angle_end)),
+    inner_points_x_end   = platter_centroid_x + platter_dist_inner * cos(NISTdegTOradian(platter_df$angle_end)),#inner points of the focal slot
+    inner_points_y_end  = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_end)))
 
 #loop through each individual time chunk and save a file for it
-for(i in 1:42){ #max 42
+for(i in 1:4){ #max 42
   #create a spatial vector out of the points and visual check
   pp_aoi <- rbind(c(platter_df$outer_points_x_start[i], platter_df$outer_points_y_start[i]), 
                   c(platter_df$inner_points_x_start[i], platter_df$inner_points_y_start[i]), 
                   c(platter_df$inner_points_x_end[i], platter_df$inner_points_y_end[i]), 
                   c(platter_df$outer_points_x_end[i], platter_df$outer_points_y_end[i]))
   pp_aoi_v <- vect(pp_aoi, type = "polygons")
-  # plot(rotated_image) #plot(1:1)
-  # plot(pp_aoi_v, col='yellow', add = TRUE)
+   plot(rotated_image) #plot(1:1)
+  plot(pp_aoi_v, col='yellow', add = TRUE)
   
   #extract image
   #test <- terra::extract(rotated_image, pp_aoi_v)
@@ -91,49 +100,34 @@ for(i in 1:42){ #max 42
 
   file_save_name <- paste0(gsub(x = file_scanned, pattern = ".tif", replacement = ""), "_chunk_", i, ".tif")
   terra::writeRaster(chunk_x, 
-                     paste0("C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/platter_scans/platter_chunks/", 
-                            file_save_name),
+                     
+                     here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "platter_scans", "platter_chunks", 
+                          file_save_name),
                      overwrite = TRUE)
 }
 
 
 
 
+### read in results from FIJI/Labkit ##############################################################################################
+#run the macro in FIJI:
+#C:\Users\danka\Box\Cornell\mentoring\student projects\summer 2022\Kent pollen catcher\Labkit_classifications
+#Macro_labkit_plantain2.ijm.ijm
 
-#read in results from FIJI/Labkit
-chunk_x_df <- read_csv("C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/platter_scans/platter_chunks/temp_chunk1.csv")
-chunk_x_summary <- chunk_x_df %>% summarize(seg_obj_n = n(),
-                                            seg_obj_size = mean(Area))
+result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
+                map_dfr(.x = ., .f = read_csv)
+result_csvs <- result_csvs %>% 
+              mutate(time_period = gsub(pattern = ".*_", replacement = "", x = Slice),
+                     time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period))) %>% 
+              arrange(time_period)
 
-platter_df$seg_obj_n[platter_df$time_period == focal_time_period] <- chunk_x_summary$seg_obj_n
-platter_df$seg_obj_size[platter_df$time_period == focal_time_period] <- chunk_x_summary$seg_obj_size
+result_csvs %>% 
+  ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-# platter_df <- platter_df %>% 
-#   mutate(seg_obj_n = case_when(focal_time_period ==  1 ~ chunk_x_summary$seg_obj_n, 
-#                                FALSE ~ seg_obj_n))
+pol_dep <- platter_df %>% dplyr::select(time_period, timestep_start, timestep_end) %>% 
+            left_join(., result_csvs)
+
+pol_dep %>% 
+  ggplot(aes(x = timestep_start, y = Count)) + geom_point() + geom_line() + theme_bw()
 
 
-
-
-
-#focal species pollen color
-
-#run FIJI/imageJ macro for: remove background
-
-#remove non-pollen colors and replace with a mask
-
-#calculate area of mask
-
-#remove background
-
-#thresholding
-
-#calculate area of non-mask
-
-#segmentation
-
-#calculate number of grains in image segment
-
-#divide grains by non-masked area
-
-#relative grains within platter sample
