@@ -60,35 +60,44 @@ platter_dist_inner <- 1640
 platter_dist_outer <- 3600
 
 ### divide image up into chunks and save each ##############################################################################
-#outer points of the focal slot
-outer_points_x <- platter_centroid_x + platter_dist_outer * cos(NISTdegTOradian(platter_df$angle_start))
-outer_points_y <- platter_centroid_y + platter_dist_outer * sin(NISTdegTOradian(platter_df$angle_start))
+platter_df <- platter_df %>% 
+  mutate(
+    outer_points_x_start = platter_centroid_x + platter_dist_outer * cos(NISTdegTOradian(platter_df$angle_start)), #outer points of the focal slot
+    outer_points_y_start = platter_centroid_y + platter_dist_outer * sin(NISTdegTOradian(platter_df$angle_start)),
+    inner_points_x_start = platter_centroid_x + platter_dist_inner * cos(NISTdegTOradian(platter_df$angle_start)),#inner points of the focal slot
+    inner_points_y_start = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_start)),
+    outer_points_x_end = platter_centroid_x + platter_dist_outer * cos(NISTdegTOradian(platter_df$angle_end)), #outer points of the focal slot
+    outer_points_y_end = platter_centroid_y + platter_dist_outer * sin(NISTdegTOradian(platter_df$angle_end)),
+    inner_points_x_end = platter_centroid_x + platter_dist_inner * cos(NISTdegTOradian(platter_df$angle_end)),#inner points of the focal slot
+    inhner_points_y_end = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_end)))
 
-#inner points of the focal slot
-inner_points_x <- platter_centroid_x + platter_dist_inner * cos(NISTdegTOradian(platter_df$angle_start))
-inner_points_y <- platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_start))
+#loop through each individual time chunk and save a file for it
+for(i in 1:42){ #max 42
+  #create a spatial vector out of the points and visual check
+  pp_aoi <- rbind(c(platter_df$outer_points_x_start[i], platter_df$outer_points_y_start[i]), 
+                  c(platter_df$inner_points_x_start[i], platter_df$inner_points_y_start[i]), 
+                  c(platter_df$inner_points_x_end[i], platter_df$inner_points_y_end[i]), 
+                  c(platter_df$outer_points_x_end[i], platter_df$outer_points_y_end[i]))
+  pp_aoi_v <- vect(pp_aoi, type = "polygons")
+  # plot(rotated_image) #plot(1:1)
+  # plot(pp_aoi_v, col='yellow', add = TRUE)
+  
+  #extract image
+  #test <- terra::extract(rotated_image, pp_aoi_v)
+  chunk_x_uncropped <- terra::crop(rotated_image, pp_aoi_v)
+  #plot(chunk_x_uncropped)
+  chunk_x <- terra::mask(chunk_x_uncropped, pp_aoi_v, updatevalue = 1)
+  #plot(chunk_x)
 
-#create a spatial vector out of the points and visual check
-pp_aoi <- rbind(c(inner_points_x[1], inner_points_y[1]), 
-                c(inner_points_x[2], inner_points_y[2]), 
-                c(outer_points_x[2], outer_points_y[2]), 
-                c(outer_points_x[1], outer_points_y[1]))
-pp_aoi_v <- vect(pp_aoi, type = "polygons")
+  file_save_name <- paste0(gsub(x = file_scanned, pattern = ".tif", replacement = ""), "_chunk_", i, ".tif")
+  terra::writeRaster(chunk_x, 
+                     paste0("C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/platter_scans/platter_chunks/", 
+                            file_save_name),
+                     overwrite = TRUE)
+}
 
-#plot(pp_aoi_v, col='yellow')
-plot(rotated_image) #plot(1:1)
-plot(pp_aoi_v, col='yellow', add = TRUE)
 
-#extract image
-#test <- terra::extract(rotated_image, pp_aoi_v)
-test <- terra::crop(rotated_image, pp_aoi_v)
-plot(test)
-test2 <- terra::mask(test, pp_aoi_v, updatevalue = 1)
-plot(test2)
 
-focal_time_period <- 1
-
-terra::writeRaster(test2, "C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/platter_scans/platter_chunks/temp_chunk1.tif")
 
 
 #read in results from FIJI/Labkit
