@@ -20,8 +20,11 @@ here::i_am("katz_photo.jpg")
 deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
   filter(!is.na(scanned_file_name))
 
-platter_row <- 12
-scanned_file_name_focal <- deployment_sheet$scanned_file_name[12]
+platters_to_process_list_rows <- c(13)
+for(j in 1:length(platters_to_process_list_rows)){
+
+platter_row <- platters_to_process_list_rows[j]
+scanned_file_name_focal <- deployment_sheet$scanned_file_name[platter_row]
 
 #sampler number
 sampler_n <- deployment_sheet$sampler[platter_row]  #"9"
@@ -96,7 +99,7 @@ platter_df <- platter_df %>%
     inner_points_y_end  = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_end)))
 
 #loop through each individual time chunk and save a file for it
-for(i in 1:43){ #max 42
+for(i in 1:42){ #max 42 non-overlapping strips
   #create a spatial vector out of the points and visual check
   pp_aoi <- rbind(c(platter_df$outer_points_x_start[i], platter_df$outer_points_y_start[i]), 
                   c(platter_df$inner_points_x_start[i], platter_df$inner_points_y_start[i]), 
@@ -113,21 +116,35 @@ for(i in 1:43){ #max 42
   chunk_x <- terra::mask(chunk_x_uncropped, pp_aoi_v, updatevalue = 1)
   #plot(chunk_x)
 
-  file_save_name <- paste0(gsub(x = file_scanned, pattern = ".tif", replacement = ""), "_chunk_", i, ".tif")
+  file_save_name <- paste0(gsub(x = scanned_file_name_focal, pattern = ".tif", replacement = ""), "_chunk_", i, ".tif")
   terra::writeRaster(chunk_x, 
                      
                      here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "platter_scans", "platter_chunks", 
                           file_save_name),
                      overwrite = TRUE)
-}
+} #end loop for 
+}#end loop for a sample
 
 
+### trying to run macro in FIJI/Labkit ############################################################################################
 
-
-### read in results from FIJI/Labkit ##############################################################################################
 #run the macro in FIJI:
 #C:\Users\danka\Box\Cornell\mentoring\student projects\summer 2022\Kent pollen catcher\Labkit_classifications
 #Macro_labkit_plantain2.ijm.ijm
+
+#hacky workaround to save the relevant file names within a .txt file so I can open that within a macro in FIJI
+
+system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
+        args=c('C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain2.ijm.ijm.ijm focal_file_name = pp_scan_samp_22_d220629')) #, "pp_scan_samp_22_d220629"
+
+
+system("C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe, 
+        C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain2.ijm.ijm.ijm pp_scan_samp_22_d220629") #, "pp_scan_samp_22_d220629"
+#system2('/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx', args=c('-batch "/Users/All Stitched CH2.ijm"', df))
+
+### read in results from FIJI/Labkit ##############################################################################################
+
+
 
 result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
                 map_dfr(.x = ., .f = read_csv)
