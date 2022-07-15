@@ -10,33 +10,45 @@ library(NISTunits) #install.packages("NISTunits")
 library(here)
 library(purrr)
 library(ggplot2)
+library(googlesheets4)
 
 setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
 
 
+### connect to google drive spreadsheet #######################################################################################
+deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
+  filter(!is.na(scanned_file_name))
+
+platter_row <- 12
+scanned_file_name_focal <- deployment_sheet$scanned_file_name[12]
+
 #sampler number
-sampler_n <- "9"
+sampler_n <- deployment_sheet$sampler[platter_row]  #"9"
 
 #time start
-time_start <- mdy_hms("6/21/2022 17:15:00")
+time_start <- ymd_hms(deployment_sheet$sampler_start_date_time[platter_row])
 
 #time deployed
-time_deploy <- mdy_hms("6/24/2022 14:59:00")
+time_deploy <- ymd_hms(deployment_sheet$deployment_time[platter_row]) #mdy_hms("6/24/2022 14:59:00")
 
 #time retreived
-time_retreived <- mdy_hms("6/26/2022 13:57:00")
+time_retreived <- ymd_hms(deployment_sheet$retrieval_time[platter_row]) #mdy_hms("6/26/2022 13:57:00")
 
 #angle at retreival 
-angle_retreival <- 8 + 360
+angle_retreival <- deployment_sheet$retreival_angle[platter_row] + 90 #the measured angle is from the blue line to the left side of the opening slit. The angles used in this script start at 90 #8 + 360
+
+#platter centroid (manually measured)
+platter_centroid_x <- deployment_sheet$image_centroid_x[platter_row] # 4047 #
+platter_centroid_y <- deployment_sheet$image_centroid_y[platter_row] # 4044
 
 #programmed step time
 step_time_min <- 65.717 
 step_time_sec = step_time_min * 60
 step_angle <- (12/516) * 365
 
-platter_df <- data.frame(time_period = 1:48, timestep_start = rep(NA, 48), timestep_end = rep(NA,48),
-                         angle_start = rep(NA, 48), angle_end = rep(NA, 48))
+platter_df <- data.frame(time_period = 1:44, timestep_start = rep(NA, 44), timestep_end = rep(NA,44),
+                         angle_start = rep(NA, 44), angle_end = rep(NA, 44))
 
 
 platter_df <- platter_df %>% 
@@ -45,9 +57,9 @@ platter_df <- platter_df %>%
                         time_deploy + 
                         step_time_sec * time_period - step_time_min,
          angle_start = step_angle * time_period - step_angle + (90 - step_angle), #the blue line starts on the left hand side of the open slit, so the first slot is just under 90 degrees
-         angle_end = step_angle * time_period + (90 - step_angle),
-         seg_obj_n = NA,
-         seg_obj_size = NA)
+         angle_end = step_angle * time_period + (90 - step_angle))
+         # seg_obj_n = NA,
+         # seg_obj_size = NA)
 
 
 #scanned file
@@ -56,19 +68,22 @@ platter_df <- platter_df %>%
 #here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "platter_scans", "processed_scan", "pp_scan_sampler9_d220624_r.tif")
 #rotated_image_r <- raster::stack("C:/Users/dsk273/Desktop/pp_scan_sampler_14_d220510_c.tif")
 rotated_image <- terra::rast(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "platter_scans", "processed_scan", 
-                                  "pp_scan_sampler9_d220624_r.tif"))
+                                  paste0(scanned_file_name_focal, "_r.tif")
+                                  #"pp_scan_sampler9_d220624_r.tif"
+                                  ))
 #rotated_image <- terra::rast(paste0(file_path, file_scanned))
 crs(rotated_image) <- NA
 terra::ext(rotated_image) <- c(0, ncol(rotated_image), 0, nrow(rotated_image))
 plot(rotated_image)
 #plotRGB(rotated_image)
 
-platter_centroid_x <- 4047
-platter_centroid_y <- 4044
+
+
+### divide image up into chunks and save each ##############################################################################
+#the width of the sampled area on the platter
 platter_dist_inner <- 1640
 platter_dist_outer <- 3600
 
-### divide image up into chunks and save each ##############################################################################
 platter_df <- platter_df %>% 
   mutate(
     outer_points_x_start = platter_centroid_x + platter_dist_outer * cos(NISTdegTOradian(platter_df$angle_start)), #outer points of the focal slot
@@ -81,7 +96,7 @@ platter_df <- platter_df %>%
     inner_points_y_end  = platter_centroid_y + platter_dist_inner * sin(NISTdegTOradian(platter_df$angle_end)))
 
 #loop through each individual time chunk and save a file for it
-for(i in 1:4){ #max 42
+for(i in 1:43){ #max 42
   #create a spatial vector out of the points and visual check
   pp_aoi <- rbind(c(platter_df$outer_points_x_start[i], platter_df$outer_points_y_start[i]), 
                   c(platter_df$inner_points_x_start[i], platter_df$inner_points_y_start[i]), 
