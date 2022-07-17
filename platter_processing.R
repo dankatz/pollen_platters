@@ -20,7 +20,7 @@ here::i_am("katz_photo.jpg")
 deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
   filter(!is.na(scanned_file_name))
 
-platters_to_process_list_rows <- c(13)
+platters_to_process_list_rows <- c(11:20)
 for(j in 1:length(platters_to_process_list_rows)){
 
 platter_row <- platters_to_process_list_rows[j]
@@ -133,13 +133,22 @@ for(i in 1:42){ #max 42 non-overlapping strips
 #Macro_labkit_plantain2.ijm.ijm
 
 #hacky workaround to save the relevant file names within a .txt file so I can open that within a macro in FIJI
+platters_to_process_list_rows
+file_name_list_txt <- deployment_sheet$scanned_file_name[min(platters_to_process_list_rows):max(platters_to_process_list_rows)]
+write_delim( x = as.data.frame(file_name_list_txt), 
+             file = here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", 
+              "hacky_file_list_workaround.txt"),
+             col_names = FALSE)
+
+
+
 
 system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
-        args=c('C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain2.ijm.ijm.ijm focal_file_name = pp_scan_samp_22_d220629')) #, "pp_scan_samp_22_d220629"
+        'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
 
 
-system("C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe, 
-        C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain2.ijm.ijm.ijm pp_scan_samp_22_d220629") #, "pp_scan_samp_22_d220629"
+# system("C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe, 
+#         C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm pp_scan_samp_22_d220629") #, "pp_scan_samp_22_d220629"
 #system2('/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx', args=c('-batch "/Users/All Stitched CH2.ijm"', df))
 
 ### read in results from FIJI/Labkit ##############################################################################################
@@ -147,19 +156,24 @@ system("C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe,
 
 
 result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
-                map_dfr(.x = ., .f = read_csv)
+                map_dfr(.x = ., .f = read_csv) 
+  
 result_csvs <- result_csvs %>% 
+              rename_with(make.names) %>% 
               mutate(time_period = gsub(pattern = ".*_", replacement = "", x = Slice),
-                     time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period))) %>% 
+                     time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period)),
+                     scanned_file_name = substring(Slice, 1, 23)) %>% 
+              dplyr::select(scanned_file_name, time_period, Count, Average.Size) %>% 
               arrange(time_period)
 
-result_csvs %>% 
-  ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
+# result_csvs %>% 
+#   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-pol_dep <- platter_df %>% dplyr::select(time_period, timestep_start, timestep_end) %>% 
+pol_dep <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time) %>% #time_period, timestep_start, timestep_end) %>% 
             left_join(., result_csvs)
 
+
 pol_dep %>% 
-  ggplot(aes(x = timestep_start, y = Count)) + geom_point() + geom_line() + theme_bw()
+  ggplot(aes(x = time_period, y = Count, color = species)) + geom_point() + geom_line() + theme_bw() + facet_wrap(~scanned_file_name)
 
 
