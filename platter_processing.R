@@ -20,10 +20,10 @@ here::i_am("katz_photo.jpg")
 deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
   filter(!is.na(scanned_file_name))
 
-platters_to_process_list_rows <- c(11:20)
+platters_to_process_list_rows <- c(21:23)
 for(j in 1:length(platters_to_process_list_rows)){
 
-platter_row <- platters_to_process_list_rows[j]
+platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[1]
 scanned_file_name_focal <- deployment_sheet$scanned_file_name[platter_row]
 
 #sampler number
@@ -126,7 +126,7 @@ for(i in 1:42){ #max 42 non-overlapping strips
 }#end loop for a sample
 
 
-### trying to run macro in FIJI/Labkit ############################################################################################
+### run classification macro in FIJI/Labkit ############################################################################################
 
 #run the macro in FIJI:
 #C:\Users\danka\Box\Cornell\mentoring\student projects\summer 2022\Kent pollen catcher\Labkit_classifications
@@ -169,11 +169,27 @@ result_csvs <- result_csvs %>%
 # result_csvs %>% 
 #   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-pol_dep <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time) %>% #time_period, timestep_start, timestep_end) %>% 
+pol_dep <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
             left_join(., result_csvs)
 
-
+pol_dep <- pol_dep %>% 
+  mutate(time_window_start = deployment_time + lubridate::dminutes(step_time_min) * (time_period - 1),
+         time_window_end = deployment_time + lubridate::dminutes(step_time_min) * (time_period),
+         time_window_med = difftime(time_window_end, time_window_start)/2 + time_window_start,
+         time_into_deploy = difftime(time_window_med, time_window_start),
+         time_window_hour = hour(time_window_med),
+         time_window_min = minute(time_window_med),
+         time_window_hm = mdy_hm(paste0("6-1-2022 ", time_window_hour, ":", time_window_min)),
+         day_deploy = case_when(time_period < 24 ~ "day 1",
+                                time_period >= 24 ~ "day 2"))
+  
 pol_dep %>% 
-  ggplot(aes(x = time_period, y = Count, color = species)) + geom_point() + geom_line() + theme_bw() + facet_wrap(~scanned_file_name)
+  filter(species == "plantain") %>% 
+  filter(time_period > 2) %>% 
+  ggplot(aes(x = time_window_hm, y = Count, group = day_deploy, color = time_period)) + geom_point() +  theme_bw() + facet_wrap(~scanned_file_name) +
+  scale_color_viridis_c() + geom_smooth()
 
+
+#compare observed angle to calculated angle 
+pol_dep %>% 
 
