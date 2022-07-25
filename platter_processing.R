@@ -11,19 +11,22 @@ library(here)
 library(purrr)
 library(ggplot2)
 library(googlesheets4)
+library(stringr)
 
 setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
+
+#IT LOOKS LIKE THE CHUNKS DIDN'T ACCOUNT FOR THE FLIPPING OF THE IMAGE IN THE SCANNER. NEED TO RE-ORDER THEM
 
 
 ### connect to google drive spreadsheet #######################################################################################
 deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
   filter(!is.na(scanned_file_name))
 
-platters_to_process_list_rows <- c(21:23)
+platters_to_process_list_rows <- c(27:32)
 for(j in 1:length(platters_to_process_list_rows)){
 
-platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[1]
+platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[27]
 scanned_file_name_focal <- deployment_sheet$scanned_file_name[platter_row]
 
 #sampler number
@@ -39,7 +42,7 @@ time_deploy <- ymd_hms(deployment_sheet$deployment_time[platter_row]) #mdy_hms("
 time_retreived <- ymd_hms(deployment_sheet$retrieval_time[platter_row]) #mdy_hms("6/26/2022 13:57:00")
 
 #angle at retreival 
-angle_retreival <- deployment_sheet$retreival_angle[platter_row] + 90 #the measured angle is from the blue line to the left side of the opening slit. The angles used in this script start at 90 #8 + 360
+#angle_retreival <- deployment_sheet$retreival_angle[platter_row] + 90 #the measured angle is from the blue line to the left side of the opening slit. The angles used in this script start at 90 #8 + 360
 
 #platter centroid (manually measured)
 platter_centroid_x <- deployment_sheet$image_centroid_x[platter_row] # 4047 #
@@ -59,7 +62,7 @@ platter_df <- platter_df %>%
          timestep_end = step_time_min - (as.numeric(difftime(time_deploy, time_start, units = "mins")) %% step_time_min) + #time left before turn on deploy
                         time_deploy + 
                         step_time_sec * time_period - step_time_min,
-         angle_start = step_angle * time_period - step_angle + (90 - step_angle), #the blue line starts on the left hand side of the open slit, so the first slot is just under 90 degrees
+         angle_start = step_angle * time_period + step_angle + (90 - step_angle), #the blue line starts on the left hand side of the open slit, so the first slot is just under 90 degrees
          angle_end = step_angle * time_period + (90 - step_angle))
          # seg_obj_n = NA,
          # seg_obj_size = NA)
@@ -162,10 +165,12 @@ result_csvs <- result_csvs %>%
               rename_with(make.names) %>% 
               mutate(time_period = gsub(pattern = ".*_", replacement = "", x = Slice),
                      time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period)),
-                     scanned_file_name = substring(Slice, 1, 23)) %>% 
+                     scanned_file_name = substring(Slice, 1, 23),
+                     scanned_file_name  = sub("_$", "", scanned_file_name)) %>% #for inconsistent file name length (ie 04 vs 4)
               dplyr::select(scanned_file_name, time_period, Count, Average.Size) %>% 
               arrange(time_period)
 
+#unique(result_csvs$scanned_file_name)
 # result_csvs %>% 
 #   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
@@ -184,10 +189,12 @@ pol_dep <- pol_dep %>%
                                 time_period >= 24 ~ "day 2"))
   
 pol_dep %>% 
-  filter(species == "plantain") %>% 
-  filter(time_period > 2) %>% 
-  ggplot(aes(x = time_window_hm, y = Count, group = day_deploy, color = time_period)) + geom_point() +  theme_bw() + facet_wrap(~scanned_file_name) +
-  scale_color_viridis_c() + geom_smooth()
+  #filter(deployment_time > mdy_hm("7/20/22 9:00")) %>% 
+  #filter(species == "plantain") %>% 
+  #filter(time_period > 0) %>% 
+  ggplot(aes(x = time_window_med, y = Count, color = species)) + geom_point() +  theme_bw() + facet_wrap(~scanned_file_name) +
+  #scale_color_viridis_d() + 
+  geom_line(aes(x = time_window_med, y = zoo::rollmean(Count, 5, align = "center", fill = NA)))
 
 
 #compare observed angle to calculated angle 
