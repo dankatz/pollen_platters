@@ -16,17 +16,17 @@ library(stringr)
 setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
 
-#IT LOOKS LIKE THE CHUNKS DIDN'T ACCOUNT FOR THE FLIPPING OF THE IMAGE IN THE SCANNER. NEED TO RE-ORDER THEM
+
 
 
 ### connect to google drive spreadsheet #######################################################################################
 deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
   filter(!is.na(scanned_file_name))
 
-platters_to_process_list_rows <- c(27:32)
+platters_to_process_list_rows <- c(33:38)
 for(j in 1:length(platters_to_process_list_rows)){
 
-platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[27]
+platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[1]
 scanned_file_name_focal <- deployment_sheet$scanned_file_name[platter_row]
 
 #sampler number
@@ -62,8 +62,8 @@ platter_df <- platter_df %>%
          timestep_end = step_time_min - (as.numeric(difftime(time_deploy, time_start, units = "mins")) %% step_time_min) + #time left before turn on deploy
                         time_deploy + 
                         step_time_sec * time_period - step_time_min,
-         angle_start = step_angle * time_period + step_angle + (90 - step_angle), #the blue line starts on the left hand side of the open slit, so the first slot is just under 90 degrees
-         angle_end = step_angle * time_period + (90 - step_angle))
+         angle_start = -step_angle * time_period - step_angle + (90 + step_angle*2), #the blue line starts on the left hand side of the open slit, so the first slot is just over 90 degrees
+         angle_end = -step_angle * time_period + (90 + step_angle *2))
          # seg_obj_n = NA,
          # seg_obj_size = NA)
 
@@ -145,14 +145,10 @@ write_delim( x = as.data.frame(file_name_list_txt),
 
 
 
+#It's easiest to just open up image j manually and run the macro for all chunks
+# system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
+#         'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
 
-system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
-        'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
-
-
-# system("C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe, 
-#         C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm pp_scan_samp_22_d220629") #, "pp_scan_samp_22_d220629"
-#system2('/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx', args=c('-batch "/Users/All Stitched CH2.ijm"', df))
 
 ### read in results from FIJI/Labkit ##############################################################################################
 
@@ -174,14 +170,18 @@ result_csvs <- result_csvs %>%
 # result_csvs %>% 
 #   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-pol_dep <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
+pol_dep_raw <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
             left_join(., result_csvs)
 
-pol_dep <- pol_dep %>% 
-  mutate(time_window_start = deployment_time + lubridate::dminutes(step_time_min) * (time_period - 1),
+pol_dep <- pol_dep_raw %>% 
+  mutate(deploy_time_falsedate = mdy_hm(paste0("6-1-2022 ", hour(deployment_time), ":", minute(deployment_time))),
+         time_window_start = deployment_time + lubridate::dminutes(step_time_min) * (time_period - 1),
+         time_window_start_hrm = paste(hour(time_window_start), minute(time_window_start), sep = ":"),
          time_window_end = deployment_time + lubridate::dminutes(step_time_min) * (time_period),
          time_window_med = difftime(time_window_end, time_window_start)/2 + time_window_start,
-         time_into_deploy = difftime(time_window_med, time_window_start),
+         #time_into_deploy = difftime(time_window_med, time_window_start),
+         time_into_deploy = difftime(time_window_med, deployment_time), #+ time_window_med,
+         time_into_deploy_falsedate = time_into_deploy + deploy_time_falsedate,
          time_window_hour = hour(time_window_med),
          time_window_min = minute(time_window_med),
          time_window_hm = mdy_hm(paste0("6-1-2022 ", time_window_hour, ":", time_window_min)),
@@ -189,7 +189,7 @@ pol_dep <- pol_dep %>%
                                 time_period >= 24 ~ "day 2"))
   
 pol_dep %>% 
-  #filter(deployment_time > mdy_hm("7/20/22 9:00")) %>% 
+  filter(deployment_time > mdy_hm("7/20/22 9:00")) %>% 
   #filter(species == "plantain") %>% 
   #filter(time_period > 0) %>% 
   ggplot(aes(x = time_window_med, y = Count, color = species)) + geom_point() +  theme_bw() + facet_wrap(~scanned_file_name) +
@@ -197,6 +197,22 @@ pol_dep %>%
   geom_line(aes(x = time_window_med, y = zoo::rollmean(Count, 5, align = "center", fill = NA)))
 
 
-#compare observed angle to calculated angle 
 pol_dep %>% 
+  filter(deployment_time > mdy_hm("6/1/22 9:00")) %>% 
+  filter(deployment_time < mdy_hm("7/17/22 9:00")) %>% 
+  filter(species == "plantain") %>% 
+  #filter(time_period < 12) %>% 
+  ggplot(aes(x = time_into_deploy_falsedate, y = Count)) + geom_point(aes(color = time_window_hour)) +  theme_bw() + facet_wrap(~scanned_file_name, scales = "free_y") +
+  scale_color_viridis_c( ) + 
+  geom_line(aes(x = time_into_deploy_falsedate, y = zoo::rollmean(Count, 5, align = "center", fill = NA))) +
+  #coord_cartesian(ylim= c(0, 1000)) +
+  geom_vline(xintercept = mdy_hm("6/1/22 18:00"), color = "blue") +
+  geom_vline(xintercept = mdy_hm("6/2/22 6:00"), color = "yellow") +
+  geom_vline(xintercept = mdy_hm("6/2/22 18:00"), color = "blue") +
+  geom_vline(xintercept = mdy_hm("6/3/22 6:00"), color = "yellow") +
+  geom_vline(xintercept = mdy_hm("6/3/22 18:00"), color = "blue") 
+
+
+
+#compare observed angle to calculated angle 
 
