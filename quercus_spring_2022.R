@@ -23,7 +23,7 @@ here::i_am("katz_photo.jpg")
 deployment_sheet <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "deployment_sheet_220727b.csv"))%>% 
   filter(!is.na(processed_file))
 
-platters_to_process_list_rows <- c(32:33)
+platters_to_process_list_rows <- c(25:48)
 for(j in 1:length(platters_to_process_list_rows)){
   
   platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[1]
@@ -152,32 +152,52 @@ write_delim( x = as.data.frame(file_name_list_txt),
 #         'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
 
 
+### read in temperature and humidity from logger ##################################################################################
+temp_twigs <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "intertwined_with_twigs_May2022_20987743_c.csv")) %>% 
+  mutate(date_time = mdy_hm(date_time))
+temp_outside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "outside_high_tunnel_May2022_20987685_c.csv")) %>% 
+  mutate(date_time = mdy_hm(date_time))
+temp_inside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "inside_high_tunnel_May22_20987683_c.csv")) %>% 
+  mutate(date_time = mdy_hm(date_time))
+
+# 
+# ggplot(temp_outside, aes(x= date_time, y = Temp_c)) + geom_line(col = "blue") + theme_bw() +
+#   geom_line(data = temp_inside, aes(x = date_time, y = Temp_c), col = "red") +
+#   geom_line(data = temp_twigs, aes(x = date_time, y = Temp_c), col = "green")
+# 
+# ggplot(temp_outside, aes(x= date_time, y = RH_p)) + geom_line(col = "blue") + theme_bw() +
+#   geom_line(data = temp_inside, aes(x = date_time, y = RH_p), col = "red") +
+#   geom_line(data = temp_twigs, aes(x = date_time, y = RH_p), col = "green")
+
+
 ### read in results from FIJI/Labkit ##############################################################################################
 
 
-
-result_csvs <- dir(here("Cornell", "Local projects", "twig pheno 2022", "labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
+result_csvs_raw <- dir(here("Cornell", "Local projects", "twig pheno 2022", "labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
   map_dfr(.x = ., .f = read_csv) 
 
-result_csvs <- result_csvs %>% 
+result_csvs <- result_csvs_raw %>% 
   rename_with(make.names) %>% 
   mutate(time_period = gsub(pattern = ".*_", replacement = "", x = Slice),
          time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period)),
-         scanned_file_name = substring(Slice, 1, 23),
-         scanned_file_name  = sub("_$", "", scanned_file_name)) %>% #for inconsistent file name length (ie 04 vs 4)
-  dplyr::select(scanned_file_name, time_period, Count, Average.Size) %>% 
+         processed_file = substring(Slice, 1, 25),
+         processed_file  = sub("_$", "", processed_file)) %>% #for inconsistent file name length (ie 04 vs 4)
+  dplyr::select(processed_file, time_period, Count, Average.Size) %>% 
   arrange(time_period)
 
 #unique(result_csvs$scanned_file_name)
-result_csvs %>%
-  ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
+# result_csvs %>%
+#   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-pol_dep_raw <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
+pol_dep_raw <- deployment_sheet %>% dplyr::select(processed_file, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
   left_join(., result_csvs)
 
+#str(pol_dep_raw)
 pol_dep <- pol_dep_raw %>% 
-  mutate(deploy_time_falsedate = mdy_hm(paste0("6-1-2022 ", hour(deployment_time), ":", minute(deployment_time))),
-         time_window_start = deployment_time + lubridate::dminutes(step_time_min) * (time_period - 1),
+  mutate( deployment_time = mdy_hm(deployment_time),
+          retrieval_time = mdy_hm(retrieval_time),
+          deploy_time_falsedate = mdy_hm(paste0("6-1-2022 ", hour(deployment_time), ":", minute(deployment_time))),
+          time_window_start = deployment_time + lubridate::dminutes(step_time_min) * (time_period - 1),
          time_window_start_hrm = paste(hour(time_window_start), minute(time_window_start), sep = ":"),
          time_window_end = deployment_time + lubridate::dminutes(step_time_min) * (time_period),
          time_window_med = difftime(time_window_end, time_window_start)/2 + time_window_start,
@@ -186,36 +206,52 @@ pol_dep <- pol_dep_raw %>%
          time_into_deploy_falsedate = time_into_deploy + deploy_time_falsedate,
          time_window_hour = hour(time_window_med),
          time_window_min = minute(time_window_med),
-         time_window_hm = mdy_hm(paste0("6-1-2022 ", time_window_hour, ":", time_window_min)),
+         #time_window_hm = mdy_hm(paste0("6-1-2022 ", time_window_hour, ":", time_window_min)),
          day_deploy = case_when(time_period < 24 ~ "day 1",
-                                time_period >= 24 ~ "day 2"))
+                                time_period >= 24 ~ "day 2")
+    )
+
+# pol_dep %>% 
+#   #filter(deployment_time > mdy_hm("7/20/22 9:00")) %>% 
+#   #filter(species == "plantain") %>% 
+#   #filter(time_period > 0) %>% 
+#   ggplot(aes(x = time_window_med, y = Count, color = species)) + geom_point() +  theme_bw() + facet_wrap(~processed_file) +
+#   #scale_color_viridis_d() + 
+#   geom_line(aes(x = time_window_med, y = zoo::rollmean(Count, 5, align = "center", fill = NA)))
+
 
 pol_dep %>% 
-  filter(deployment_time > mdy_hm("7/20/22 9:00")) %>% 
-  #filter(species == "plantain") %>% 
-  #filter(time_period > 0) %>% 
-  ggplot(aes(x = time_window_med, y = Count, color = species)) + geom_point() +  theme_bw() + facet_wrap(~scanned_file_name) +
-  #scale_color_viridis_d() + 
-  geom_line(aes(x = time_window_med, y = zoo::rollmean(Count, 5, align = "center", fill = NA)))
-
-
-pol_dep %>% 
-  filter(deployment_time > mdy_hm("6/1/22 9:00")) %>% 
-  filter(deployment_time < mdy_hm("7/17/22 9:00")) %>% 
-  filter(species == "plantain") %>% 
-  #filter(time_period < 12) %>% 
-  ggplot(aes(x = time_into_deploy_falsedate, y = Count)) + geom_point(aes(color = time_window_hour)) +  theme_bw() + facet_wrap(~scanned_file_name, scales = "free_y") +
+  filter(processed_file == "pp_scan_samp_11_d220506_r") %>% 
+  ggplot(aes(x = time_window_start, y = Count)) + geom_point(aes(color = time_window_hour)) +  theme_bw() + facet_wrap(~processed_file, scales = "free_y") +
   scale_color_viridis_c( ) + 
-  geom_line(aes(x = time_into_deploy_falsedate, y = zoo::rollmean(Count, 5, align = "center", fill = NA))) +
-  #coord_cartesian(ylim= c(0, 1000)) +
-  geom_vline(xintercept = mdy_hm("6/1/22 18:00"), color = "blue") +
-  geom_vline(xintercept = mdy_hm("6/2/22 6:00"), color = "yellow") +
-  geom_vline(xintercept = mdy_hm("6/2/22 18:00"), color = "blue") +
-  geom_vline(xintercept = mdy_hm("6/3/22 6:00"), color = "yellow") +
-  geom_vline(xintercept = mdy_hm("6/3/22 18:00"), color = "blue") 
+  geom_line(aes(x = time_window_start, y = zoo::rollmean(Count, 5, align = "center", fill = NA))) 
 
 
+pol_dep %>% 
+  filter(processed_file == "pp_scan_samp_23_d220517_r") %>% 
+  # filter(deployment_time > mdy_hm("6/1/22 9:00")) %>% 
+  # filter(deployment_time < mdy_hm("7/17/22 9:00")) %>% 
+   filter(species == "Quru") %>% 
+  #filter(time_period < 12) %>% 
+  ggplot(aes(x = time_into_deploy_falsedate, y = Count)) + geom_point(aes(color = time_window_hour)) +  theme_bw() + facet_wrap(~processed_file, scales = "free_y") +
+  scale_color_viridis_c( ) + 
+  geom_line(aes(x = time_into_deploy_falsedate, y = zoo::rollmean(Count, 5, align = "center", fill = NA))) 
+  #coord_cartesian(ylim= c(0, 1000)) 
+  # geom_vline(xintercept = mdy_hm("6/1/22 18:00"), color = "blue") +
+  # geom_vline(xintercept = mdy_hm("6/2/22 6:00"), color = "yellow") +
+  # geom_vline(xintercept = mdy_hm("6/2/22 18:00"), color = "blue") +
+  # geom_vline(xintercept = mdy_hm("6/3/22 6:00"), color = "yellow") +
+  # geom_vline(xintercept = mdy_hm("6/3/22 18:00"), color = "blue") 
 
-#compare observed angle to calculated angle 
 
-##
+#combine env vars with pollen platters
+pol_dep$time_window_med[100]
+temp_twigs$date_time
+
+x <- pol_dep$time_window_med[100]
+env_index <- which(abs(temp_twigs$date_time-x) == min(abs(temp_twigs$date_time - x)))
+temp_twigs$date_time[env_index]
+
+# for(i in 1:10){
+#   
+# }
