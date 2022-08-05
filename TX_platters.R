@@ -146,19 +146,49 @@ for(j in 1:length(platters_to_process_list_rows)){
 #Macro_labkit_plantain2.ijm.ijm
 
 #hacky workaround to save the relevant file names within a .txt file so I can open that within a macro in FIJI
-platters_to_process_list_rows
-file_name_list_txt <- deployment_sheet$processed_file[min(platters_to_process_list_rows):max(platters_to_process_list_rows)]
-#file_name_list_txt <- gsub(x = file_name_list_txt, pattern = "_r", "")
-write_delim( x = as.data.frame(file_name_list_txt), 
-             file = here("Cornell", "Local projects", "twig pheno 2022", "labkit_classifications", 
-                         "hacky_file_list_workaround.txt"),
-             col_names = FALSE)
-
-
+# platters_to_process_list_rows
+# file_name_list_txt <- deployment_sheet$processed_file[min(platters_to_process_list_rows):max(platters_to_process_list_rows)]
+# #file_name_list_txt <- gsub(x = file_name_list_txt, pattern = "_r", "")
+# write_delim( x = as.data.frame(file_name_list_txt), 
+#              file = here("Cornell", "Local projects", "twig pheno 2022", "labkit_classifications", 
+#                          "hacky_file_list_workaround.txt"),
+#              col_names = FALSE)
 
 #It's easiest to just open up image j manually and run the macro for all chunks
 # system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
 #         'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
+
+#For some reason the segmentation command isn't picking up anything when I run it through the macro menu. After a lot of failed troubleshooting,
+#I just used the probability map and used it on the directory where all chunks were.
+
+#processing the files now to extract the number of pixels where the probability > X for each chunk
+test <- raster::raster("C:/Users/dsk273/Desktop/classified_chunk_images/pp_scanner_sampler_1_d201230_chunk_11_pm.tif")
+hist(test[test[]<.9])
+
+test[test[] > 0.5] <- NA
+raster::plot(test)
+length(test[test[]<0.5])
+
+files_to_scan <- dir("C:/Users/dsk273/Desktop/classified_chunk_images/")
+setwd("C:/Users/dsk273/Desktop/classified_chunk_images/")
+
+chunk_pm_results <- data.frame(files_to_scan, pol_pix_n = rep(NA, length(files_to_scan)))
+
+# scan_sum <- function(x){
+#   pol_rast <- raster::raster(x)
+#   pol_pix_n <- length(pol_rast[pol_rast[]<0.5])
+#   return(x, pol_pix_n)
+# }
+# 
+# chunk_pm_results_test <- chunk_pm_results[1:10,]
+# test <- purrr::pmap_dfr(chunk_pm_results_test, scan_sum)
+
+#doing a really quick version since it's late and I need to just get this started
+for(i in 1:nrow(chunk_pm_results)){
+  pol_rast <- raster::raster(chunk_pm_results$files_to_scan[i])
+  chunk_pm_results$pol_pix_n[i] <- length(pol_rast[pol_rast[]<0.5])
+}
+
 
 
 ### read in temperature and humidity from logger ##################################################################################
