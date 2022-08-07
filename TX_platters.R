@@ -3,6 +3,7 @@
 library(lubridate)
 library(dplyr)
 library(readr)
+library(tidyr)
 library(raster)
 library(terra)
 library(NISTunits) #install.packages("NISTunits")
@@ -141,63 +142,38 @@ for(j in 1:length(platters_to_process_list_rows)){
 
 ### run classification macro in FIJI/Labkit ############################################################################################
 
-#run the macro in FIJI:
-#C:\Users\danka\Box\Cornell\mentoring\student projects\summer 2022\Kent pollen catcher\Labkit_classifications
-#Macro_labkit_plantain2.ijm.ijm
-
-#hacky workaround to save the relevant file names within a .txt file so I can open that within a macro in FIJI
-# platters_to_process_list_rows
-# file_name_list_txt <- deployment_sheet$processed_file[min(platters_to_process_list_rows):max(platters_to_process_list_rows)]
-# #file_name_list_txt <- gsub(x = file_name_list_txt, pattern = "_r", "")
-# write_delim( x = as.data.frame(file_name_list_txt), 
-#              file = here("Cornell", "Local projects", "twig pheno 2022", "labkit_classifications", 
-#                          "hacky_file_list_workaround.txt"),
-#              col_names = FALSE)
-
-#It's easiest to just open up image j manually and run the macro for all chunks
-# system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
-#         'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
-
 #For some reason the segmentation command isn't picking up anything when I run it through the macro menu. After a lot of failed troubleshooting,
-#I just used the probability map and used it on the directory where all chunks were.
+#I just used the probability map and ran it on the directory where all chunks were.
 
-#processing the files now to extract the number of pixels where the probability > X for each chunk
-test <- raster::raster("C:/Users/dsk273/Desktop/classified_chunk_images/pp_scanner_sampler_1_d201230_chunk_11_pm.tif")
-hist(test[test[]<.9])
-
-test[test[] > 0.5] <- NA
-raster::plot(test)
-length(test[test[]<0.5])
+#processing the files now to extract the number of pixels where the Juas probability > .5 for each chunk
+#test on a single chunk
+# test <- raster::raster("C:/Users/dsk273/Desktop/classified_chunk_images/pp_scanner_sampler_1_d201230_chunk_11_pm.tif")
+# hist(test[test[]<.9])
+# 
+# test[test[] > 0.5] <- NA
+# raster::plot(test)
+# length(test[test[]<0.5])
 
 files_to_scan <- dir("C:/Users/dsk273/Desktop/classified_chunk_images/")
 setwd("C:/Users/dsk273/Desktop/classified_chunk_images/")
 
 chunk_pm_results <- data.frame(files_to_scan, pol_pix_n = rep(NA, length(files_to_scan)))
 
-# scan_sum <- function(x){
-#   pol_rast <- raster::raster(x)
-#   pol_pix_n <- length(pol_rast[pol_rast[]<0.5])
-#   return(x, pol_pix_n)
-# }
-# 
-# chunk_pm_results_test <- chunk_pm_results[1:10,]
-# test <- purrr::pmap_dfr(chunk_pm_results_test, scan_sum)
-
-#doing a really quick version since it's late and I need to just get this started
+#running through each probability map. This could be faster with purrr, but a for loop is still adequate here
 for(i in 1:nrow(chunk_pm_results)){
   pol_rast <- raster::raster(chunk_pm_results$files_to_scan[i])
   chunk_pm_results$pol_pix_n[i] <- length(pol_rast[pol_rast[]<0.5])
 }
 
-
+write_csv(chunk_pm_results, here("texas", "pollen_platter", "TX_platter_analysis", "Labkit_classifications", "TX_platters_Juas_pixels.csv"))
 
 ### read in temperature and humidity from logger ##################################################################################
-temp_twigs <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "intertwined_with_twigs_May2022_20987743_c.csv")) %>% 
-  mutate(date_time = mdy_hm(date_time))
-temp_outside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "outside_high_tunnel_May2022_20987685_c.csv")) %>% 
-  mutate(date_time = mdy_hm(date_time))
-temp_inside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "inside_high_tunnel_May22_20987683_c.csv")) %>% 
-  mutate(date_time = mdy_hm(date_time))
+# temp_twigs <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "intertwined_with_twigs_May2022_20987743_c.csv")) %>% 
+#   mutate(date_time = mdy_hm(date_time))
+# temp_outside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "outside_high_tunnel_May2022_20987685_c.csv")) %>% 
+#   mutate(date_time = mdy_hm(date_time))
+# temp_inside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "inside_high_tunnel_May22_20987683_c.csv")) %>% 
+#   mutate(date_time = mdy_hm(date_time))
 
 # 
 # ggplot(temp_outside, aes(x= date_time, y = Temp_c)) + geom_line(col = "blue") + theme_bw() +
@@ -209,55 +185,60 @@ temp_inside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "in
 #   geom_line(data = temp_twigs, aes(x = date_time, y = RH_p), col = "green")
 
 
-### read in results from FIJI/Labkit ##############################################################################################
+### expand deployment df ##############################################################################################
+#programmed step time
+step_time_min <- 112.4394 
+step_time_sec = step_time_min * 60
+step_angle <- (4/516) * 365
+n_slots <- round(360/step_angle , 0) #* step_time_min)/60)/24
+
+rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60
+
+#file with results of pixel classification in each chunk (see above)
+chunk_pm_results <- read_csv(here("texas", "pollen_platter", "TX_platter_analysis", "Labkit_classifications", "TX_platters_Juas_pixels.csv"))
+
+deploy_join <- deployment_sheet %>% 
+      dplyr::select(sampler, site, POINT_X, POINT_Y, date_deploy_auto, date_retreive_auto, retreival_angle, scanned_file) 
+pd <- expand_grid(deploy_join, data.frame(time_chunk = 1:n_slots)) %>% 
+  mutate(files_to_scan = paste0(scanned_file, "_chunk_", time_chunk, "_pm.tif")) %>% 
+  left_join(., chunk_pm_results) %>%  #add in the results from the pollen classification
+  mutate(date_deploy_auto = mdy_hm(date_deploy_auto),
+         date_retreive_auto = mdy_hm(date_retreive_auto),
+    chunk_time_start = date_deploy_auto + step_time_sec * time_chunk - step_time_sec,
+    chunk_time_end = date_deploy_auto + step_time_sec * time_chunk,
+    chunk_hr_med = chunk_time_start + step_time_min/2) %>% 
+  mutate(retreival_angle_c = case_when(retreival_angle < 0 ~ 360 + retreival_angle, TRUE ~ retreival_angle),
+         deploy_duration = date_retreive_auto - date_deploy_auto,
+         deploy_duration_num = as.numeric(deploy_duration),
+         retreival_angle_predicted = as.numeric(deploy_duration/step_time_sec) * step_angle, 
+         retreival_angle_dif = retreival_angle_c - retreival_angle_predicted,
+         
+         angle_mid_expected = step_angle * time_chunk + step_angle/2,
+
+         #which chunks shouldn't have been reached
+         chunk_never_reached = case_when(angle_mid_expected > retreival_angle_predicted  ~ "shouldn't have been reached", 
+                                          TRUE ~ "should have been reached"),
+         chunk_empirically_reached = case_when(angle_mid_expected > retreival_angle_c ~ "didn't turn that far",
+                                               TRUE ~ "did turn that far"),
+        
+         #when a platter wasn't retrieved in time and potentially overwrote data
+         time_past_full_rotation = case_when(deploy_duration_num > as.numeric(rotation_time_sec) ~  (deploy_duration_num - as.numeric(rotation_time_sec)),
+                                             TRUE ~ 0), #in seconds
+          angles_overshot = as.numeric(time_past_full_rotation/step_time_sec) * step_angle,
+          chunk_overwritten = case_when(angle_mid_expected < angles_overshot ~ "overwritten", 
+                                        TRUE ~ "okay"),
+         )
 
 
-result_csvs_raw <- dir(here("Cornell", "Local projects", "twig pheno 2022", "labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
-  map_dfr(.x = ., .f = read_csv) 
 
-result_csvs <- result_csvs_raw %>% 
-  rename_with(make.names) %>% 
-  mutate(time_period = gsub(pattern = ".*_", replacement = "", x = Slice),
-         time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period)),
-         processed_file = substring(Slice, 1, 25),
-         processed_file  = sub("_$", "", processed_file)) %>% #for inconsistent file name length (ie 04 vs 4)
-  dplyr::select(processed_file, time_period, Count, Average.Size) %>% 
-  arrange(time_period)
+### preliminary data vis ##############################################################################################
+pd2 <- filter(pd, chunk_never_reached != "shouldn't have been reached") %>% 
+       filter(chunk_overwritten != "overwritten")
+  
+ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n)) + geom_line() + facet_wrap(~scanned_file, scales = "free")
 
-#unique(result_csvs$scanned_file_name)
-# result_csvs %>%
-#   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-pol_dep_raw <- deployment_sheet %>% dplyr::select(processed_file, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
-  left_join(., result_csvs)
-
-#str(pol_dep_raw)
-pol_dep <- pol_dep_raw %>% 
-  mutate( deployment_time = mdy_hm(deployment_time),
-          retrieval_time = mdy_hm(retrieval_time),
-          deploy_time_falsedate = mdy_hm(paste0("6-1-2022 ", hour(deployment_time), ":", minute(deployment_time))),
-          time_window_start = deployment_time + lubridate::dminutes(step_time_min) * (time_period - 1),
-          time_window_start_hrm = paste(hour(time_window_start), minute(time_window_start), sep = ":"),
-          time_window_end = deployment_time + lubridate::dminutes(step_time_min) * (time_period),
-          time_window_med = difftime(time_window_end, time_window_start)/2 + time_window_start,
-          #time_into_deploy = difftime(time_window_med, time_window_start),
-          time_into_deploy = difftime(time_window_med, deployment_time), #+ time_window_med,
-          time_into_deploy_falsedate = time_into_deploy + deploy_time_falsedate,
-          time_window_hour = hour(time_window_med),
-          time_window_min = minute(time_window_med),
-          #time_window_hm = mdy_hm(paste0("6-1-2022 ", time_window_hour, ":", time_window_min)),
-          day_deploy = case_when(time_period < 24 ~ "day 1",
-                                 time_period >= 24 ~ "day 2")
-  )
-
-# pol_dep %>% 
-#   #filter(deployment_time > mdy_hm("7/20/22 9:00")) %>% 
-#   #filter(species == "plantain") %>% 
-#   #filter(time_period > 0) %>% 
-#   ggplot(aes(x = time_window_med, y = Count, color = species)) + geom_point() +  theme_bw() + facet_wrap(~processed_file) +
-#   #scale_color_viridis_d() + 
-#   geom_line(aes(x = time_window_med, y = zoo::rollmean(Count, 5, align = "center", fill = NA)))
-
+### old stuff ##############################################################################################
 
 pol_dep %>% 
   filter(processed_file == "pp_scan_samp_11_d220506_r") %>% 
