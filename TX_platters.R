@@ -13,7 +13,7 @@ library(ggplot2)
 library(googlesheets4)
 library(stringr)
 
-setwd("C:/Users/dsk273/Box")
+setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
 
 
@@ -30,7 +30,7 @@ here::i_am("katz_photo.jpg")
 
 
 ### connect to deployment spreadsheet #######################################################################################
-deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220803.csv"))
+deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220808.csv"))
 
 platters_to_process_list_rows <- c(1:110)
 for(j in 1:length(platters_to_process_list_rows)){
@@ -186,6 +186,8 @@ write_csv(chunk_pm_results, here("texas", "pollen_platter", "TX_platter_analysis
 
 
 ### expand deployment df ##############################################################################################
+deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220807.csv"))
+
 #programmed step time
 step_time_min <- 112.4394 
 step_time_sec = step_time_min * 60
@@ -206,38 +208,82 @@ pd <- expand_grid(deploy_join, data.frame(time_chunk = 1:n_slots)) %>%
          date_retreive_auto = mdy_hm(date_retreive_auto),
     chunk_time_start = date_deploy_auto + step_time_sec * time_chunk - step_time_sec,
     chunk_time_end = date_deploy_auto + step_time_sec * time_chunk,
-    chunk_hr_med = chunk_time_start + step_time_min/2) %>% 
+    chunk_hr_med = chunk_time_start + step_time_min/2,
+    chunk_hr = hour(chunk_hr_med)) %>% 
   mutate(retreival_angle_c = case_when(retreival_angle < 0 ~ 360 + retreival_angle, TRUE ~ retreival_angle),
          deploy_duration = date_retreive_auto - date_deploy_auto,
          deploy_duration_num = as.numeric(deploy_duration),
-         retreival_angle_predicted = as.numeric(deploy_duration/step_time_sec) * step_angle, 
-         retreival_angle_dif = retreival_angle_c - retreival_angle_predicted,
-         
-         angle_mid_expected = step_angle * time_chunk + step_angle/2,
-
-         #which chunks shouldn't have been reached
-         chunk_never_reached = case_when(angle_mid_expected > retreival_angle_predicted  ~ "shouldn't have been reached", 
-                                          TRUE ~ "should have been reached"),
-         chunk_empirically_reached = case_when(angle_mid_expected > retreival_angle_c ~ "didn't turn that far",
-                                               TRUE ~ "did turn that far"),
-        
-         #when a platter wasn't retrieved in time and potentially overwrote data
          time_past_full_rotation = case_when(deploy_duration_num > as.numeric(rotation_time_sec) ~  (deploy_duration_num - as.numeric(rotation_time_sec)),
                                              TRUE ~ 0), #in seconds
-          angles_overshot = as.numeric(time_past_full_rotation/step_time_sec) * step_angle,
-          chunk_overwritten = case_when(angle_mid_expected < angles_overshot ~ "overwritten", 
-                                        TRUE ~ "okay"),
+         retreival_angle_predicted = case_when(time_past_full_rotation < 1 ~ as.numeric(deploy_duration/step_time_sec) * step_angle,
+                                               time_past_full_rotation > 1 ~ as.numeric(deploy_duration/step_time_sec) * step_angle -360),
+         retreival_angle_dif = retreival_angle_c - retreival_angle_predicted,
+         
+         angle_chunk_programmed = step_angle * time_chunk + step_angle/2,
+  
+         #for deployments duration that was under a single rotation time
+         # which chunks shouldn't have been reached
+         chunk_problem = case_when( 
+                                time_past_full_rotation > (rotation_time_sec *2) ~ "platter left out long term",
+                                time_past_full_rotation < 1 & 
+                                angle_chunk_programmed > retreival_angle_predicted  ~ "chunk shouldn't have been reached", 
+                                  time_past_full_rotation < 1 & 
+                                angle_chunk_programmed >  retreival_angle_c  ~ "platter stopped before reaching chunk",
+                                retreival_angle_c > retreival_angle_predicted + 15 ~ "platter moved too fast",
+         
+         #for deployment duration that exceeded the programmed single rotation
+         #when a platter wasn't retrieved in time and potentially overwrote data
+                                time_past_full_rotation > 1 & 
+                                angle_chunk_programmed < (as.numeric(time_past_full_rotation/step_time_sec) * step_angle) &
+                                retreival_angle_c > angle_chunk_programmed ~ "chunk overwritten",
+                     
+                                time_past_full_rotation > 1 & 
+                               angle_chunk_programmed < (as.numeric(time_past_full_rotation/step_time_sec) * step_angle) &
+                               retreival_angle_c < angle_chunk_programmed ~ "okay",
+       
+         #when a platter should have overwritten but stopped first
+           
+         TRUE ~ "okay"
+         )
+          # chunk_overwritten = case_when(angle_chunk_programmed < angles_overshot ~ "overwritten", 
+          #                               TRUE ~ "okay")
+        # all_types_bad_data = case_w
          )
 
+#normalizing by platter max
+max_per_platter <- pd %>%  group_by(scanned_file) %>% 
+  summarize(p_max = max(pol_pix_n))
 
+pd <- left_join(pd, max_per_platter)
+
+pd <- pd %>% group_by(scanned_file) %>% 
+  mutate( 
+    pol_pix_ma = slider::slide_dbl(pol_pix_n, mean, 
+                                 .before = round(12/(step_time_min/60), 0),
+                                 .after =  round(12/(step_time_min/60), 0)),
+    pol_pix_ma_rel = pol_pix_n/pol_pix_ma
+    #roll_day = slider::slide_index_dbl(pol_pix_n/p_max, chunk_hr_med, mean, .before = days(.5))
+  )
 
 ### preliminary data vis ##############################################################################################
-pd2 <- filter(pd, chunk_never_reached != "shouldn't have been reached") %>% 
-       filter(chunk_overwritten != "overwritten")
+#pd2 <- filter(pd, chunk_hr_med > mdy_hm("1/1/2021 9:00")) 
+pd2 <- filter(pd, chunk_problem == "okay") 
   
-ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n)) + geom_line() + facet_wrap(~scanned_file, scales = "free")
+ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n/p_max, col = chunk_problem)) + geom_line() + facet_wrap(~scanned_file, scales = "free") + theme_bw()
 
 
+# hour of observations
+pd2 %>% 
+  group_by(chunk_hr) %>% 
+  summarize(p_per_hour_ma_rel_mean = mean(pol_pix_ma_rel),
+            p_per_hour_ma_rel_sd = sd(pol_pix_ma_rel)) %>% 
+ggplot(aes(x =  chunk_hr, y = p_per_hour_ma_rel_mean)) + geom_point() + theme_bw() + geom_smooth()
+
+
+pd2 %>% 
+  ggplot(aes(x = as.factor(chunk_hr), y = pol_pix_ma_rel)) + geom_boxplot()
+  
+  
 ### old stuff ##############################################################################################
 
 pol_dep %>% 
