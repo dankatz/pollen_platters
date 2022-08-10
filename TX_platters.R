@@ -12,25 +12,16 @@ library(purrr)
 library(ggplot2)
 library(googlesheets4)
 library(stringr)
+library(sf)
 
 setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
 
 
-# #
-# test <- read.delim("clipboard")
-# test4 <- test %>% as_tibble(.) %>% 
-# mutate(
-# site = gsub("(.*),.*", "\\1", sampler.text),
-# test2 = gsub(".*,","",sampler.text),
-# test3 = mdy(test2))
-# test4
-# #writeClipboard(test4$test3)
-# write.table(test4, "clipboard", sep="\t", row.names=FALSE, col.names=FALSE)
 
 
 ### connect to deployment spreadsheet #######################################################################################
-deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220808.csv"))
+deployment_sheet <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_220809.csv"))
 
 platters_to_process_list_rows <- c(1:110)
 for(j in 1:length(platters_to_process_list_rows)){
@@ -186,7 +177,8 @@ write_csv(chunk_pm_results, here("texas", "pollen_platter", "TX_platter_analysis
 
 
 ### expand deployment df ##############################################################################################
-deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220807.csv"))
+#deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220807.csv"))
+deployment_sheet <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_220809.csv"))
 
 #programmed step time
 step_time_min <- 112.4394 
@@ -200,7 +192,7 @@ rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60
 chunk_pm_results <- read_csv(here("texas", "pollen_platter", "TX_platter_analysis", "Labkit_classifications", "TX_platters_Juas_pixels.csv"))
 
 deploy_join <- deployment_sheet %>% 
-      dplyr::select(sampler, site, POINT_X, POINT_Y, date_deploy_auto, date_retreive_auto, retreival_angle, scanned_file) 
+      dplyr::select(sampler, site, POINT_X, POINT_Y, long, lat, date_deploy_auto, date_retreive_auto, retreival_angle, scanned_file) 
 pd <- expand_grid(deploy_join, data.frame(time_chunk = 1:n_slots)) %>% 
   mutate(files_to_scan = paste0(scanned_file, "_chunk_", time_chunk, "_pm.tif")) %>% 
   left_join(., chunk_pm_results) %>%  #add in the results from the pollen classification
@@ -264,6 +256,63 @@ pd <- pd %>% group_by(scanned_file) %>%
     pol_pix_ma_rel = pol_pix_n/pol_pix_ma
     #roll_day = slider::slide_index_dbl(pol_pix_n/p_max, chunk_hr_med, mean, .before = days(.5))
   )
+
+
+
+### connecting with other data: individual and site pheno curves ####################################################
+deployment_sheet <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_220809.csv"))
+
+#read in the site polygons 
+site_poly <- st_read("C:/Users/danka/Box/texas/pheno/site_names_fs2020_21.shp")
+
+
+
+
+
+# #extract the coordinates (lat, long, from the projected coordinates)
+# #I just added it back to the original csv for convenience
+deployment_sheet_coords_sf <- group_by(deployment_sheet, GlobalID) %>%
+  dplyr::select(POINT_X, POINT_Y) %>%
+  sf::st_as_sf(., coords = c("POINT_X", "POINT_Y"), crs = 32614)  #the coordinates are in 32614 (WGS UTM 14N)
+
+deployment_sheet_coords_sf %>%  
+  sf::st_transform(., crs = 4326) %>% #projecting back to 4326
+  sf::st_coordinates(.) %>% as.data.frame() #extracting the coordinates
+write.table(deployment_sheet_coords, "clipboard", sep="\t", row.names=FALSE)
+# #deployment_sheet <- deployment_sheet %>% mutate(long = deployment_sheet_coords$X, lat = deployment_sheet_coords$Y)
+
+
+deployment_sheet_site_name_by_coords <- st_join(deployment_sheet_coords_sf, site_poly) %>% 
+  dplyr::select(GlobalID, site_name)
+st_geometry(deployment_sheet_site_name_by_coords) <- NULL
+
+deployment_sheet <- left_join(deployment_sheet, deployment_sheet_site_name_by_coords)  
+#test <- deployment_sheet %>% dplyr::select(site, site_name)
+
+
+### add in met data from daymet #######################################################################################
+library(daymetr)
+#start with the pixels of each NAB station
+ site_sf_coords <- deployment_sheet %>% dplyr::select(site_name, lat, long) %>% 
+                    mutate(lat = round(lat, 2),
+                           long = round(long, 2)) %>% distinct()
+#test <- download_daymet(lon = deployment_sheet$long[1], lat = deployment_sheet$lat[1], start =2015, end = 2017, simplify = TRUE)
+setwd(here("texas",  "pheno", "met_data"))
+write_csv(site_sf_coords, "platters_site_sf_coords.csv")
+weather_at_platters <- download_daymet_batch(file_location = "platters_site_sf_coords.csv", start =2019, end = 2021, simplify = TRUE)
+write_csv(weather_at_platters, "weather_at_platter_sites_220809.csv")
+unique(weather_at_platters$measurement)
+
+weather_at_platters <- read_csv(here("texas",  "pheno", "met_data", "weather_at_platter_sites_220809.csv") )%>% 
+  mutate(date = as.Date(paste(year, yday, sep = "-"), "%Y-%j")) %>%
+  mutate(measurement = gsub(pattern = ".", replacement = "", x = measurement, fixed = TRUE)) %>%
+  dplyr::select(site_name = site, date, measurement, value) %>%
+  pivot_wider(id_cols = c(site_name, date), names_from = measurement, values_from = value, names_prefix = "met_")
+#head(weather_at_stations)
+
+
+
+
 
 ### preliminary data vis ##############################################################################################
 #pd2 <- filter(pd, chunk_hr_med > mdy_hm("1/1/2021 9:00")) 
