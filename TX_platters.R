@@ -13,6 +13,7 @@ library(ggplot2)
 library(googlesheets4)
 library(stringr)
 library(sf)
+beepr::beep(5)
 
 setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
@@ -158,27 +159,11 @@ for(i in 1:nrow(chunk_pm_results)){
 
 write_csv(chunk_pm_results, here("texas", "pollen_platter", "TX_platter_analysis", "Labkit_classifications", "TX_platters_Juas_pixels.csv"))
 
-### read in temperature and humidity from logger ##################################################################################
-# temp_twigs <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "intertwined_with_twigs_May2022_20987743_c.csv")) %>% 
-#   mutate(date_time = mdy_hm(date_time))
-# temp_outside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "outside_high_tunnel_May2022_20987685_c.csv")) %>% 
-#   mutate(date_time = mdy_hm(date_time))
-# temp_inside <- read_csv(here("Cornell", "Local projects", "twig pheno 2022", "inside_high_tunnel_May22_20987683_c.csv")) %>% 
-#   mutate(date_time = mdy_hm(date_time))
 
-# 
-# ggplot(temp_outside, aes(x= date_time, y = Temp_c)) + geom_line(col = "blue") + theme_bw() +
-#   geom_line(data = temp_inside, aes(x = date_time, y = Temp_c), col = "red") +
-#   geom_line(data = temp_twigs, aes(x = date_time, y = Temp_c), col = "green")
-# 
-# ggplot(temp_outside, aes(x= date_time, y = RH_p)) + geom_line(col = "blue") + theme_bw() +
-#   geom_line(data = temp_inside, aes(x = date_time, y = RH_p), col = "red") +
-#   geom_line(data = temp_twigs, aes(x = date_time, y = RH_p), col = "green")
-
-
+  
 ### expand deployment df ##############################################################################################
 #deployment_sheet <- read_csv(here("texas", "pheno", "pollen_platter_analysis", "pollen_platters_fs20_21_220807.csv"))
-deployment_sheet <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_220809.csv"))
+deployment_sheet <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_220812.csv"))
 
 #programmed step time
 step_time_min <- 112.4394 
@@ -192,7 +177,7 @@ rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60
 chunk_pm_results <- read_csv(here("texas", "pollen_platter", "TX_platter_analysis", "Labkit_classifications", "TX_platters_Juas_pixels.csv"))
 
 deploy_join <- deployment_sheet %>% 
-      dplyr::select(sampler, site, POINT_X, POINT_Y, long, lat, date_deploy_auto, date_retreive_auto, retreival_angle, scanned_file) 
+      dplyr::select(sampler, treatment, site, POINT_X, POINT_Y, long, lat, date_deploy_auto, date_retreive_auto, retreival_angle, scanned_file) 
 pd <- expand_grid(deploy_join, data.frame(time_chunk = 1:n_slots)) %>% 
   mutate(files_to_scan = paste0(scanned_file, "_chunk_", time_chunk, "_pm.tif")) %>% 
   left_join(., chunk_pm_results) %>%  #add in the results from the pollen classification
@@ -313,12 +298,170 @@ weather_at_platters <- read_csv(here("texas",  "pheno", "met_data", "weather_at_
 
 
 
+### read in temperature and humidity from data loggers and local stations ##################################################################################
+
+datalogger_meta <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "data_logger_metadata_220812_f.csv")) %>% 
+  mutate(time_date_deploy = mdy_hm(time_date_deploy),
+         time_date_retreive = mdy_hm(time_date_retreive))
+
+#could make a function and extract ID from file name, but with just a few, I'm doing it manually for the moment
+comal_data_logger_1 <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Comal_tempRH_210107_210212_inside_20987684.csv"),
+                                skip = 2, col_names = c("ID", "date_time_", "temp_c", "rh","dewpoint"), col_select = 1:5) %>% 
+  mutate(data_logger_ID = 20987684)
+
+comal_data_logger_2 <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Comal_tempRH_210107_210212_outside_20987683.csv"),
+                                skip = 2, col_names = c("ID", "date_time_", "temp_c", "rh","dewpoint"), col_select = 1:5) %>% 
+  mutate(data_logger_ID = 20987683)
+
+hays_data_logger_1 <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Hays_tempRH_210105_210209_inside_20987742.csv"),
+                               skip = 2, col_names = c("ID", "date_time_", "temp_c", "rh","dewpoint"), col_select = 1:5) %>% 
+  mutate(data_logger_ID = 20987742)
+
+hays_data_logger_2 <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Hays_tempRH_210105_210209_outside_20987686.csv"),
+                               skip = 2, col_names = c("ID", "date_time_", "temp_c", "rh","dewpoint"), col_select = 1:5) %>% 
+  mutate(data_logger_ID = 20987686)
+
+wade_data_logger_1 <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Wade_tempRH_210112_210210_inside_20987743.csv"),
+                               skip = 2, col_names = c("ID", "date_time_", "temp_c", "rh","dewpoint"), col_select = 1:5) %>% 
+  mutate(data_logger_ID = 20987743)
+
+wade_data_logger_2 <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Wade_tempRH_210112_210210_outside_20987685.csv"),
+                               skip = 2, col_names = c("ID", "date_time_", "temp_c", "rh","dewpoint"), col_select = 1:5) %>% 
+  mutate(data_logger_ID = 20987685)
+
+hobos <- bind_rows(comal_data_logger_1, comal_data_logger_2, hays_data_logger_1, hays_data_logger_2, wade_data_logger_1, wade_data_logger_2)
+
+hobos <- left_join(hobos, datalogger_meta) %>% 
+  mutate(time_date_meas = mdy_hms(date_time_),
+         temp_f = temp_c * (9/5) + 32) %>% 
+  filter(time_date_meas > time_date_deploy & time_date_meas < time_date_retreive)
+
+# ggplot(hobos, aes(x= time_date_meas, y = temp_f, color = treatment)) + geom_line() + theme_bw() + facet_wrap(~site)
+
+### wind logger
+windlogger <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Wade_windlogger_jan2021.csv")) %>% 
+  mutate(time_date_meas = mdy_hm(dt_mdy_hm),
+         data_logger_ID = 999) %>% dplyr::select(-dt_mdy_hm)
+windlogger <- left_join(windlogger, datalogger_meta)  %>% 
+  filter(time_date_meas > time_date_deploy & time_date_meas < time_date_retreive)
+
+# ggplot(windlogger, aes(x = time_date_meas, y = Speed)) + geom_line() + theme_bw()
+
+### ambient weather stations (courtesy of Joe Wilson at Comal)
+hays_ambient <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Hays_ambient-weather-20200901-20210211.csv"),
+                         name_repair = "universal") %>%   mutate(data_logger_ID = 9991)
+wade_ambient <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Wade_ambient-weather-20200901-20210211_30.8493_neg_98.0088.csv"),
+                         name_repair = "universal") %>%   mutate(data_logger_ID = 9992)
+comal_ambient <- read_csv(here("texas",  "pheno", "met_data", "site_data_logger", "Comal_ambient-weather-20200901-20210211.csv"),
+                          name_repair = "universal") %>%   mutate(data_logger_ID = 9993)
+
+ambient <- bind_rows(hays_ambient, wade_ambient, comal_ambient)
+ambient2 <- ambient %>% 
+  mutate(time_date_meas = substr(Date, 1, 16),
+         time_date_meas = ymd_hm(time_date_meas)) %>% 
+  rename(temp_f = Outdoor.Temperature,
+         rh = Outdoor.Humidity) 
+ambient3 <- ambient2 %>% 
+  left_join(., datalogger_meta) %>% 
+  filter(time_date_meas > time_date_deploy & time_date_meas < time_date_retreive)
+# 
+# ggplot(ambient3, aes(x = time_date_meas,  y = temp_f, color = treatment)) + geom_line() + theme_bw() + facet_wrap(~site) 
+# 
+# ggplot(ambient3, aes(x = time_date_meas,  y = temp_f)) + geom_point(color = "red", size = 0.4) + theme_bw() + facet_wrap(~site) +
+#   geom_point(data = hobos2, aes(x = time_date_meas, y = temp_f), color = "blue", size = 0.2)
+
+
+
+### add the met data to the pollen platter data #######################################################################
+
+### Hobo data
+# for each row, extract the chunk start time and the stop time
+hobo_extract_fun <- function(df){
+  f_sampler <- df$sampler
+  f_start <- df$chunk_time_start
+  f_end <- df$chunk_time_end
+  f_site <- df$site
+  f_tmt <- "outside" # temporary placeholder, saying all sites are "outside" 
+  
+  met <-
+    hobos %>% 
+    filter(site == f_site) %>% 
+    filter(treatment == f_tmt) %>% 
+    filter(time_date_meas > f_start & time_date_meas < f_end) %>% 
+    summarize(temp_c_hobo = mean(temp_c, na.rm = TRUE),
+              rh_hobo = mean(rh, na.rm = TRUE)) %>% 
+    mutate(chunk_time_start = f_start,
+           chunk_time_end = f_end,
+           site = f_site,
+           sampler = f_sampler) %>% 
+    ungroup()
+  return(met)
+}
+
+#test <- pd[8812:8912, ] %>% ungroup()
+hobo_chunks <- pd %>% 
+  split(1:nrow(.)) %>% #needs to be split to run on a df: https://stackoverflow.com/questions/55018739/run-purrrmap-dfr-on-dataframe-rows
+  map_dfr(.x = ., .f = hobo_extract_fun)
+beepr::beep(3)
+
+pd <- left_join(pd, hobo_chunks)
+
+
+### Ambient data
+# for each dataframe row, extract the chunk start time and the stop time
+ambient_extract_fun <- function(df){
+  f_sampler <- df$sampler
+  f_start <- df$chunk_time_start
+  f_end <- df$chunk_time_end
+  f_site <- df$site
+  f_tmt <- "outside" # temporary placeholder, saying all sites are "outside" 
+  
+# average all env vars in within the start and stop time
+  met <-
+    ambient3 %>%  #names(ambient3)
+    filter(site == f_site) %>% 
+    filter(treatment == f_tmt) %>% 
+    filter(time_date_meas > f_start & time_date_meas < f_end) %>% 
+    summarize(temp_f_amb = mean(temp_f, na.rm = TRUE),
+              rh_f_amb = mean(rh, na.rm = TRUE),
+              feelslike_f_amb = mean(Feels.Like, na.rm = TRUE),
+              Dew.Point_amb = mean(Dew.Point, na.rm = TRUE),
+              windspeed_amb = mean(Wind.Speed, na.rm = TRUE),
+              gust_amb = mean(Wind.Gust, na.rm = TRUE),
+              wind_direction_amb = mean(Wind.Direction, na.rm = TRUE),
+              rain_hourly_amb = mean(Hourly.Rain, na.rm = TRUE),
+              pressure_rel_amb = mean(Relative.Pressure, na.rm = TRUE),
+              pressure_abs_amb = mean(Absolute.Pressure, na.rm = TRUE),
+              sol_rad_amb = mean(Solar.Radiation, na.rm = TRUE)) %>% 
+    mutate(chunk_time_start = f_start,
+           chunk_time_end = f_end,
+           site = f_site,
+           sampler = f_sampler) %>% 
+    ungroup()
+  return(met)
+}
+
+ambient_chunks <- pd %>%  #pd[8812:8912, ] 
+  split(1:nrow(.)) %>% #needs to be split to run on a df: https://stackoverflow.com/questions/55018739/run-purrrmap-dfr-on-dataframe-rows
+  map_dfr(.x = ., .f = ambient_extract_fun)
+beepr::beep(3)
+
+pd <- left_join(pd, ambient_chunks)
+
+
+# write_csv(pd, here("texas",  "pollen_platter", "pollen_platters_fs20_21_processed_weather_220812.csv"))
 
 ### preliminary data vis ##############################################################################################
+#pd <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_processed_weather_220812.csv"))
 #pd2 <- filter(pd, chunk_hr_med > mdy_hm("1/1/2021 9:00")) 
-pd2 <- filter(pd, chunk_problem == "okay") 
+pd2 <- filter(pd, chunk_problem == "okay") %>% 
+  mutate(temp_c_amb = (temp_f_amb - 32)*(5/9),
+         es_amb = 0.6108 * exp(17.27 * temp_c_amb / (temp_c_amb + 237.3)),
+         vpd_amb = rh_f_amb/(100 * es_amb) - es_amb) %>%
+  #https://physics.stackexchange.com/questions/4343/how-can-i-calculate-vapor-pressure-deficit-from-temperature-and-relative-humidit
+  mutate( slide_vec(ja, ~mean(.x[c(1,3)], na.rm = TRUE), .before = 1, .after = 1))
   
-ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n/p_max, col = chunk_problem)) + geom_line() + facet_wrap(~scanned_file, scales = "free") + theme_bw()
+ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n, col = treatment)) + geom_line() + facet_wrap(~scanned_file, scales = "free") + theme_bw()
 
 
 # hour of observations
@@ -332,7 +475,32 @@ ggplot(aes(x =  chunk_hr, y = p_per_hour_ma_rel_mean)) + geom_point() + theme_bw
 pd2 %>% 
   ggplot(aes(x = as.factor(chunk_hr), y = pol_pix_ma_rel)) + geom_boxplot()
   
-  
+
+### looking at time series and raw data
+names(pd2)
+pd2 %>% 
+  filter(treatment != "contamination control") %>% 
+  #filter(treatment != "porch control") %>% 
+  #filter(treatment == "open air") %>% 
+  filter(site == "Hays" | site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_ma_rel, col = vpd_amb, group = scanned_file)) + geom_line(size = 1)  + 
+  theme_bw() + facet_grid(treatment~site, scales = "free")+
+  scale_color_viridis_c()
+
+#direct comparison of chunk vs the 24 hour period
+pd2 %>% 
+  filter(treatment != "contamination control") %>% 
+  #filter(treatment != "porch control") %>% 
+  #filter(treatment == "open air") %>% 
+  filter(site == "Hays" | site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+ggplot(aes(x = vpd_amb, y = pol_pix_ma_rel, col =scanned_file)) + geom_point() + theme_bw() + facet_grid(treatment~site, scales = "free")+
+  scale_color_viridis_d() + geom_smooth(method = "lm")
+
+
+ggplot(pd2, aes(x = rh_f_amb, y = vpd_amb, col = temp_c_amb)) + geom_point()
+
+
+
 ### old stuff ##############################################################################################
 
 pol_dep %>% 
