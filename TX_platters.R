@@ -235,10 +235,14 @@ pd <- left_join(pd, max_per_platter)
 
 pd <- pd %>% group_by(scanned_file) %>% 
   mutate( 
-    pol_pix_ma = slider::slide_dbl(pol_pix_n, mean, 
+    pol_pix_ma24 = slider::slide_dbl(pol_pix_n, mean, 
                                  .before = round(12/(step_time_min/60), 0),
                                  .after =  round(12/(step_time_min/60), 0)),
-    pol_pix_ma_rel = pol_pix_n/pol_pix_ma
+    pol_pix_ma24_rel = pol_pix_n/pol_pix_ma,
+    pol_pix_ma48 = slider::slide_dbl(pol_pix_n, mean, 
+                                     .before = round(24/(step_time_min/60), 0),
+                                     .after =  round(24/(step_time_min/60), 0)),
+    pol_pix_ma48_rel = pol_pix_n/pol_pix_ma
     #roll_day = slider::slide_index_dbl(pol_pix_n/p_max, chunk_hr_med, mean, .before = days(.5))
   )
 
@@ -454,14 +458,36 @@ pd <- left_join(pd, ambient_chunks)
 ### preliminary data vis ##############################################################################################
 #pd <- read_csv(here("texas",  "pollen_platter", "pollen_platters_fs20_21_processed_weather_220812.csv"))
 #pd2 <- filter(pd, chunk_hr_med > mdy_hm("1/1/2021 9:00")) 
+get.es <- function(temp){
+  es <- 6.11 * exp((2.5e6 / 461) * (1 / 273 - 1 / (273 + temp)))
+  return(es)
+}
+
+get.vpd <- function(rh, temp){
+  ## calculate saturation vapor pressure
+  es <- get.es(temp)
+  ## calculate vapor pressure deficit
+  vpd <- ((100 - rh) / 100) * es
+  return(vpd)
+}
+
 pd2 <- filter(pd, chunk_problem == "okay") %>% 
   mutate(temp_c_amb = (temp_f_amb - 32)*(5/9),
          es_amb = 0.6108 * exp(17.27 * temp_c_amb / (temp_c_amb + 237.3)),
-         vpd_amb = rh_f_amb/(100 * es_amb) - es_amb) %>%
+         vpd_amb = rh_f_amb/(100 * es_amb) - es_amb) %>% 
   #https://physics.stackexchange.com/questions/4343/how-can-i-calculate-vapor-pressure-deficit-from-temperature-and-relative-humidit
-  mutate( slide_vec(ja, ~mean(.x[c(1,3)], na.rm = TRUE), .before = 1, .after = 1))
+  mutate(vpd2_amb = get.vpd(rh_f_amb, temp_c_amb))
+  
+
+hist(pd2$vpd2_amb)
+hist(pd2$vpd_amb)
+
+
+
+
   
 ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n, col = treatment)) + geom_line() + facet_wrap(~scanned_file, scales = "free") + theme_bw()
+
 
 
 # hour of observations
@@ -473,8 +499,104 @@ ggplot(aes(x =  chunk_hr, y = p_per_hour_ma_rel_mean)) + geom_point() + theme_bw
 
 
 pd2 %>% 
-  ggplot(aes(x = as.factor(chunk_hr), y = pol_pix_ma_rel)) + geom_boxplot()
+  ggplot(aes(x = as.factor(chunk_hr), y = pol_pix_ma_rel)) + geom_boxplot() + facet_wrap(~treatment, ncol = 1)
   
+
+### looking at a single platter
+pd2 %>% filter(scanned_file == "pp_scanner_sampler_14_d210114") %>% 
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_n, group = scanned_file)) + geom_line(size = 1)  + 
+  theme_bw() + #facet_wrap(~scanned_file, scales = "free")+
+  scale_color_viridis_c() + xlab("date") + ylab("pollen abundance (pixels)")
+
+### how effective was the porch screen at reducing pollen? (open air vs porch control)
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_deploy_loc = paste(date_deploy, POINT_X, POINT_Y)) %>% 
+  filter(date_deploy_loc == "2021-01-12 589852.0617 3410760.884" | 
+         date_deploy_loc == "2020-12-29 589852.0704 3410760.872" |
+         date_deploy_loc == "2021-01-22 580013.9055 3299866.384") %>% 
+  filter(treatment == "porch control" | treatment == "open air") %>% 
+  group_by(treatment, date_deploy_loc) %>% 
+  summarize(n = n(),
+            p_mean = mean(pol_pix_n, na.rm = TRUE),
+            p_se = sd(pol_pix_n, na.rm = TRUE)/sqrt(n)) %>% 
+  ggplot(aes(x = date_deploy_loc, y = p_mean, fill = treatment, ymin = p_mean - p_se, ymax = p_mean + p_se)) + geom_col(position = position_dodge())  + 
+  geom_errorbar(position = position_dodge(1), width = 0.2)+
+  theme_bw(base_size = 16)  + xlab("deployments") + ylab("pollen concentration (number of pixels)") + scale_x_discrete(labels = c("", "", ""))+
+  scale_fill_discrete( labels = c("without screen", "with screen"))
+
+
+### A long time series
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_site = paste(date_deploy, site),
+         location = paste(POINT_X, POINT_Y)) %>% 
+  filter(treatment != "contamination control" & treatment != "porch control") %>% 
+  filter(location == "589853.9347 3410801.385") %>% 
+  filter(site == "Wade") %>%  #| site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_n, group = scanned_file)) + geom_line(size = 1)  + 
+  scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + #scale_color_viridis_c() +
+  theme_bw(base_size = 16) + xlab("date") + ylab("pollen concentration (number of pixels)") #+ facet_wrap(~location, scales = "free") 
+
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_site = paste(date_deploy, site),
+         location = paste(POINT_X, POINT_Y)) %>% 
+  filter(treatment != "contamination control" & treatment != "porch control") %>% 
+  filter(location == "589853.9347 3410801.385") %>% 
+  ungroup() %>% 
+  arrange(chunk_hr_med) %>% 
+  mutate(pol_pix_cum = cumsum(pol_pix_n)) %>% 
+  filter(site == "Wade") %>%  #| site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_cum)) + geom_line(size = 1)  + 
+  scale_x_datetime(date_breaks = "4 day", date_labels =  "%d %b")  + scale_color_viridis_c() +
+  theme_bw() + xlab("date") + ylab("cumulative pollen (number of pixels)") #+ facet_wrap(~location, scales = "free") 
+
+
+#env data at a long time series  
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_site = paste(date_deploy, site),
+         location = paste(POINT_X, POINT_Y)) %>% 
+  filter(treatment != "contamination control" & treatment != "porch control") %>% 
+  filter(location == "589853.9347 3410801.385") %>% 
+  filter(site == "Wade") %>%  #| site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+  ggplot(aes(x = chunk_hr_med, y = vpd2_amb, group = scanned_file, col = pol_pix_ma48_rel)) + geom_line(size = 1)  + 
+  scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + scale_color_viridis_c(name = "pollen (pixels)") +
+  theme_bw(base_size = 16) + xlab("date") + ylab("relative humidity (%)")#ylab("pressure (inHg)") #+ facet_wrap(~location, scales = "free") 
+
+
+
+
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_site = paste(date_deploy, site),
+         location = paste(POINT_X, POINT_Y)) %>% 
+  filter(location == "589853.9347 3410801.385") %>% 
+  ggplot(aes(x = pressure_rel_amb, y = pol_pix_n)) + geom_point(size = 1)  + 
+  #scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + scale_color_viridis_c(name = "pollen (pixels)") +
+  theme_bw() + xlab("pressure (inHg)") + ylab("pollen release (pixels") + geom_smooth(method ="lm")
+
+
+
+###### 
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_site = paste(date_deploy, site),
+         location = paste(POINT_X, POINT_Y)) %>% 
+  filter(treatment != "contamination control" & treatment != "porch control") %>% 
+ # filter(location == "589853.9347 3410801.385") %>% 
+  filter(site == "Hays" | site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_n, col = vpd2_amb,group = scanned_file)) + geom_line(size = 1)  + 
+  #scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + 
+  scale_color_viridis_c(name = "vpd (mb)") +
+  theme_bw() + xlab("date") + ylab("pollen concentration (number of pixels)") + facet_wrap(~site, scales = "free_y", ncol = 1) 
+
+
+#how well correlated are environmental variables between sites
+pd2 %>% 
+  ggplot(aes(x = date))
+
 
 ### looking at time series and raw data
 names(pd2)
@@ -482,18 +604,47 @@ pd2 %>%
   filter(treatment != "contamination control") %>% 
   #filter(treatment != "porch control") %>% 
   #filter(treatment == "open air") %>% 
+  filter(retreival_angle_dif > - 6 & retreival_angle_dif < 6) %>% 
   filter(site == "Hays" | site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
   ggplot(aes(x = chunk_hr_med, y = pol_pix_ma_rel, col = vpd_amb, group = scanned_file)) + geom_line(size = 1)  + 
   theme_bw() + facet_grid(treatment~site, scales = "free")+
   scale_color_viridis_c()
 
-#direct comparison of chunk vs the 24 hour period
+
+### looking at platters that should have good temporal accuracy (angle was within 4 hrs)
+hist(pd2$retreival_angle_dif, breaks = 200)
+names(pd2)
 pd2 %>% 
   filter(treatment != "contamination control") %>% 
   #filter(treatment != "porch control") %>% 
   #filter(treatment == "open air") %>% 
+  filter(retreival_angle_dif > 0 & retreival_angle_dif < 15) %>% 
   filter(site == "Hays" | site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
-ggplot(aes(x = vpd_amb, y = pol_pix_ma_rel, col =scanned_file)) + geom_point() + theme_bw() + facet_grid(treatment~site, scales = "free")+
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_n, col = temp_f_amb, group = scanned_file)) + geom_line(size = 1)  + 
+  theme_bw() + facet_wrap(~scanned_file, scales = "free")+ scale_color_viridis_c()
+
+
+
+### looking at a few that seem to have especially clear signals
+some_clear_platters <- c("pp_scanner_sampler_22_d210112", "pp_scanner_sampler_12_d210114",
+                         "pp_scanner_sampler_14_d210114", "pp_scanner_sampler_14_d210105",
+                         "pp_scanner_sampler_11_d210129", "pp_scanner_sampler_11_d210121",
+                         "pp_scanner_sampler_16_d210112", "pp_scanner_sampler_19_d201230")
+pd2 %>% filter(scanned_file %in% some_clear_platters) %>% 
+  filter(retreival_angle_dif > - 6 & retreival_angle_dif < 6) %>% 
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_n, col = temp_f_amb, group = scanned_file)) + geom_line(size = 1)  + 
+  theme_bw() + facet_wrap(~scanned_file, scales = "free")+
+  scale_color_viridis_c()
+  
+  
+#direct comparison of chunk vs the 24 hour period
+pd2 %>% 
+  filter(treatment != "contamination control") %>%
+  #filter(retreival_angle_dif > - 10 & retreival_angle_dif < 10) %>% 
+  #filter(treatment != "porch control") %>% 
+  #filter(treatment == "open air") %>% 
+  filter(site == "Hays" | site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+ggplot(aes(x = vpd_amb, y = pol_pix_ma48_rel, col = scanned_file)) + geom_point() + theme_bw() + facet_grid(treatment~site, scales = "free")+
   scale_color_viridis_d() + geom_smooth(method = "lm")
 
 
