@@ -194,6 +194,16 @@ step_angle <- (12/516) * 365
 n_slots <- round(360/step_angle , 0) #* step_time_min)/60)/24
 rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60 #rotation_time_sec/(60*60)
 
+
+
+result_csvs %>% mutate(
+  sampler = substring(files_to_scan, 1, 23),
+  time_chunk_raw = substring(files_to_scan, 31, 32),
+  time_chunk = as.numeric(gsub(pattern = "_", replacement = "", x = time_chunk_raw))
+) %>% 
+  ggplot(aes(x = time_chunk, y = pol_pix_n, col = sampler)) + geom_line() + theme_bw()
+
+
 result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results_ragweed"), full.names = TRUE) %>%  
                 map_dfr(.x = ., .f = read_csv) 
   
