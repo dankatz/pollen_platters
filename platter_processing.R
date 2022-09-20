@@ -14,7 +14,7 @@ library(googlesheets4)
 library(stringr)
 library(tidyr)
 
-setwd("C:/Users/danka/Box")
+setwd("C:/Users/dsk273/Box")
 here::i_am("katz_photo.jpg")
 
 
@@ -24,7 +24,7 @@ here::i_am("katz_photo.jpg")
 deployment_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1h8XE4uVwhZ4Aez7e9cUUSics7iCskL6rrKBSnsEokdM/edit?usp=sharing") %>% 
   filter(!is.na(scanned_file_name))
 
-platters_to_process_list_rows <- c(39:50)
+platters_to_process_list_rows <- c(51:54)
 for(j in 1:length(platters_to_process_list_rows)){
 
 platter_row <- platters_to_process_list_rows[j] #platter_row <- platters_to_process_list_rows[1]
@@ -150,6 +150,41 @@ write_delim( x = as.data.frame(file_name_list_txt),
 # system2('C:/Users/danka/Documents/Fiji.app/ImageJ-win64.exe', 
 #         'C:/Users/danka/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/Macro_labkit_plantain4.ijm') #, "pp_scan_samp_22_d220629"
 
+#currently trying it as a batch process; it seems labkit updated so it doesn't play nicely with the macro anymore
+
+test <- raster("C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/classified_chunks_ragweed/pp_scan_samp_15_d220916_chunk_10_pm.tif")
+plot(test)
+
+
+
+### update as of sept 20, 2022, taken from the TX_platters.R script
+#For some reason the segmentation command isn't picking up anything when I run it through the macro menu. After a lot of failed troubleshooting,
+#I just used the probability map and ran it on the directory where all chunks were.
+
+#processing the files now to extract the number of pixels where the Juas probability > .5 for each chunk
+#test on a single chunk
+# test <- raster::raster("C:/Users/dsk273/Desktop/classified_chunk_images/pp_scanner_sampler_1_d201230_chunk_11_pm.tif")
+# hist(test[test[]<.9])
+# 
+# test[test[] > 0.5] <- NA
+# raster::plot(test)
+# length(test[test[]<0.5])
+
+files_to_scan <- dir("C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/classified_chunks_ragweed")
+setwd("C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/classified_chunks_ragweed")
+
+chunk_pm_results <- data.frame(files_to_scan, pol_pix_n = rep(NA, length(files_to_scan)))
+
+#running through each probability map. This could be faster with purrr, but a for loop is still adequate here
+for(i in 1:nrow(chunk_pm_results)){
+  pol_rast <- raster::raster(chunk_pm_results$files_to_scan[i])
+  chunk_pm_results$pol_pix_n[i] <- length(pol_rast[pol_rast[]<0.5])
+}
+
+write_csv(chunk_pm_results, "C:/Users/dsk273/Box/Cornell/mentoring/student projects/summer 2022/Kent pollen catcher/Labkit_classifications/classification_chunk_results_ragweed/ragweed_results220920_b.csv")
+
+
+###NEED TO REWRITE FOR RAGWEED
 
 ### read in results from FIJI/Labkit and prepare data ##############################################################################################
 #programmed step time
@@ -159,7 +194,7 @@ step_angle <- (12/516) * 365
 n_slots <- round(360/step_angle , 0) #* step_time_min)/60)/24
 rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60 #rotation_time_sec/(60*60)
 
-result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
+result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results_ragweed"), full.names = TRUE) %>%  
                 map_dfr(.x = ., .f = read_csv) 
   
 result_csvs <- result_csvs %>% 
