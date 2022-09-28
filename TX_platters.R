@@ -15,7 +15,8 @@ library(stringr)
 library(sf)
 beepr::beep(5)
 
-setwd("C:/Users/danka/Box")
+setwd("C:/Users/dsk273/Box")
+#setwd("C:/Users/danka/Box")
 here::i_am("katz_photo.jpg")
 
 
@@ -476,16 +477,63 @@ pd2 <- filter(pd, chunk_problem == "okay") %>%
          es_amb = 0.6108 * exp(17.27 * temp_c_amb / (temp_c_amb + 237.3)),
          vpd_amb = rh_f_amb/(100 * es_amb) - es_amb) %>% 
   #https://physics.stackexchange.com/questions/4343/how-can-i-calculate-vapor-pressure-deficit-from-temperature-and-relative-humidit
-  mutate(vpd2_amb = get.vpd(rh_f_amb, temp_c_amb))
+  mutate(vpd2_amb = get.vpd(rh_f_amb, temp_c_amb)) %>% 
+  mutate(long_d4 = round(long, 4),
+         lat_d4 = round(lat, 4),
+          tree_xy = paste(long_d4, lat_d4),
+         date4 = date(chunk_hr_med))
   
 
 hist(pd2$vpd2_amb)
 hist(pd2$vpd_amb)
 
 
+### add in the opening curve for each tree ##############################################################################
+### load in the observations (which now include a filled out date x tree grid and predicted sac open on focal day)#########################
+day_start_1920 <- mdy("12-10-2019")
+day_start_2021 <- mdy("12-10-2020")
+p_core <- read_csv(here("texas", "pheno",  "p_core_sites_Y_sim_220926.csv")) %>% 
+  mutate(sample_datetime = ymd_hms(sample_datetime, tz = "US/Central"),
+         sample_hours = hour(sample_datetime),
+         sample_date = date(sample_datetime),
+         prop_open = perc_open/100) # %>%  filter(!is.na(pollen_rel))
 
+p_snap <- read_csv(here("texas", "pheno",  "p_snap_sites_Y_sim_220926.csv")) %>% 
+  mutate(sample_datetime = ymd_hms(sample_datetime, tz = "US/Central"),
+         sample_hours = hour(sample_datetime),
+         sample_date = date(sample_datetime),
+         prop_open = perc_open/100) # %>%  filter(!is.na(pollen_rel))
 
-  
+p <- bind_rows(p_core, p_snap) %>% 
+  mutate(y_hat_release_mean = (lead(Y_hat_mean) - lag(Y_hat_mean))/2,
+         y_hat_release_mean = case_when(y_hat_release_mean < 0 ~ 0, TRUE ~ y_hat_release_mean),
+         tree_id2 = paste0(site_n_core, site_n_snap, tree_n_core, tree_n_snap),
+         date4 = day_experiment + day_start_2021)
+
+#filling in the variables that are not linked to time: tree coordinates
+tree_id_vars <- p %>% 
+  mutate(
+    long_d4 = round(x, 4),
+    lat_d4 = round(y, 4),
+    tree_xy = paste(long_d4, lat_d4)) %>% 
+  filter(!is.na(x) ) %>% 
+  dplyr::select(tree_n_core, tree_n_snap, site_n_core, tree_n_snap, site_name, site_type, tree_xy) %>% distinct() %>% 
+  rename(site_name2 = site_name, site_type2 = site_type) 
+
+p2 <- left_join(p, tree_id_vars)%>% 
+  filter(!is.na(tree_xy)) %>% 
+  mutate(
+    site_name = site_name2, site = site_name2, site_type = site_type2) %>% 
+  dplyr::select(date4, tree_xy, y_hat_release_mean)
+
+### THERE ARE A FEW PROBLEMS REMAINING. I THINK I SHOULD MANUALLY GO BACK AND MAKE SURE ALL TREES AND PLATTERS COORDS ALIGN
+pd2 <- left_join(pd2, p2)
+
+(pd2$tree_xy)
+p$tree_xy 
+
+pd2$date4
+p$date4
 ggplot(pd2, aes(x = chunk_hr_med, y = pol_pix_n, col = treatment)) + geom_line() + facet_wrap(~scanned_file, scales = "free") + theme_bw()
 
 
@@ -561,7 +609,7 @@ pd2 %>%
   filter(treatment != "contamination control" & treatment != "porch control") %>% 
   filter(location == "589853.9347 3410801.385") %>% 
   filter(site == "Wade") %>%  #| site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
-  ggplot(aes(x = chunk_hr_med, y = vpd2_amb, group = scanned_file, col = pol_pix_ma48_rel)) + geom_line(size = 1)  + 
+  ggplot(aes(x = chunk_hr_med, y = vpd2_amb, group = scanned_file, col = pol_pix_ma_rel)) + geom_line(size = 1)  + 
   scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + scale_color_viridis_c(name = "pollen (pixels)") +
   theme_bw(base_size = 16) + xlab("date") + ylab("relative humidity (%)")#ylab("pressure (inHg)") #+ facet_wrap(~location, scales = "free") 
 
@@ -576,6 +624,19 @@ pd2 %>%
   ggplot(aes(x = pressure_rel_amb, y = pol_pix_n)) + geom_point(size = 1)  + 
   #scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + scale_color_viridis_c(name = "pollen (pixels)") +
   theme_bw() + xlab("pressure (inHg)") + ylab("pollen release (pixels") + geom_smooth(method ="lm")
+
+
+#env data at a long time series  
+pd2 %>% 
+  mutate(date_deploy = as_date(date_deploy_auto),
+         date_site = paste(date_deploy, site),
+         location = paste(POINT_X, POINT_Y)) %>% 
+  filter(treatment != "contamination control" & treatment != "porch control") %>% 
+  filter(location == "589853.9347 3410801.385") %>% 
+  filter(site == "Wade") %>%  #| site == "Comal" | site == "Wade") %>%  #pol_pix_n/p_max
+  ggplot(aes(x = chunk_hr_med, y = pol_pix_ma_rel, group = scanned_file, col = y_hat_release_mean)) + geom_line(size = 1)  + 
+  scale_x_datetime(date_breaks = "1 day", date_labels =  "%d %b")  + scale_color_viridis_c() +
+  theme_bw(base_size = 16) + xlab("date") + ylab("relative humidity (%)")#ylab("pressure (inHg)") #+ facet_wrap(~location, scales = "free") 
 
 
 
@@ -649,6 +710,126 @@ ggplot(aes(x = vpd_amb, y = pol_pix_ma48_rel, col = scanned_file)) + geom_point(
 
 
 ggplot(pd2, aes(x = rh_f_amb, y = vpd_amb, col = temp_c_amb)) + geom_point()
+
+
+
+
+
+### setting up dlnm ########################################################################################
+
+### setting up analysis with a distributed lags model using dlnm package #######################################
+library(dlnm)
+library(splines)
+library(MASS)
+
+
+data_for_model <- pd2 %>% 
+  filter(tree_xy != "NA NA") 
+
+
+## set up dlnm crossbasis object for use in glm
+max_lag <- 4
+vpd_lag <- crossbasis(data_for_model$vpd2_amb, lag = max_lag, 
+                      #argvar=list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                      argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                      arglag = list(fun = "ns")) #shape of lag
+
+# srad_lag <- crossbasis(data_for_model$srad, lag = max_lag, 
+#                        argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+#                        arglag = list(fun = "ns")) #shape of lag
+# 
+# rmax_lag <- crossbasis(data_for_model$rmax, lag = max_lag, 
+#                        argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+#                        arglag = list(fun = "ns")) #shape of lag
+# 
+temp_lag <- crossbasis(data_for_model$temp_f_amb, lag = max_lag,
+                       argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                       arglag = list(fun = "ns")) #shape of lag
+
+# vs_lag <- crossbasis(data_for_model$vs, lag = max_lag, 
+#                      argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+#                      arglag = list(fun = "ns")) #shape of lag
+
+
+#binomial glm with included variables
+model1 <- glm(pol_pix_ma_rel ~  #number of cases at a station on an observed day
+                y_hat_release_mean + 
+                #prop_open + 
+                
+                vpd_lag+
+                # vpd +
+                # srad_lag +
+                # srad +
+                # rmax_lag +
+                # rmax +
+                temp_lag,
+                # tmmx +
+                # vs_lag,
+              #vs +
+              
+              # ns(time_after_noon, df = 3) ,
+              #  ns(time_after_sunrise, df = 3), 
+              
+              #family = "binomial", 
+              #link = "logit", #(link = "logit")(link="logit"),
+              data = data_for_model)  
+
+model1
+summary(model1) #str(model1)
+
+
+### visualize effects of vpd
+pred1_vpd <- crosspred(vpd_lag,  model1, #at = 1,
+                       at = seq(from = min(data_for_model$vpd, na.rm = TRUE), to = max(data_for_model$vpd, na.rm = TRUE), by = 0.10), 
+                       bylag = 1, cen = 0, cumul = TRUE) #str(pred1_cup)
+
+vpd_lag_RR <-
+  as.data.frame(pred1_vpd$cumfit) %>% mutate(vpd = pred1_vpd$predvar) %>% 
+  pivot_longer(., cols = contains("lag"), names_to = "lag", values_to = "RR") %>% 
+  mutate(lag = as.numeric(gsub(pattern = "lag", replacement = "", x = lag))) %>% 
+  ggplot(aes(x = vpd, y = lag, z = RR)) + geom_contour_filled(bins = 10) + theme_bw() +
+  scale_fill_viridis_d(option = "plasma", direction = -1, name = "RR")    #automatically bins and turns to factor
+vpd_lag_RR
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

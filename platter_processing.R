@@ -195,7 +195,7 @@ n_slots <- round(360/step_angle , 0) #* step_time_min)/60)/24
 rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60 #rotation_time_sec/(60*60)
 
 
-
+#temporary data vis for kent
 result_csvs %>% mutate(
   sampler = substring(files_to_scan, 1, 23),
   time_chunk_raw = substring(files_to_scan, 31, 32),
