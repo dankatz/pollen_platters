@@ -478,8 +478,8 @@ pd2 <- filter(pd, chunk_problem == "okay") %>%
          vpd_amb = rh_f_amb/(100 * es_amb) - es_amb) %>% 
   #https://physics.stackexchange.com/questions/4343/how-can-i-calculate-vapor-pressure-deficit-from-temperature-and-relative-humidit
   mutate(vpd2_amb = get.vpd(rh_f_amb, temp_c_amb)) %>% 
-  mutate(long_d4 = round(long, 4),
-         lat_d4 = round(lat, 4),
+  mutate(long_d4 = round(long, 5),
+         lat_d4 = round(lat, 5),
           tree_xy = paste(long_d4, lat_d4),
          date4 = date(chunk_hr_med))
   
@@ -513,8 +513,8 @@ p <- bind_rows(p_core, p_snap) %>%
 #filling in the variables that are not linked to time: tree coordinates
 tree_id_vars <- p %>% 
   mutate(
-    long_d4 = round(x, 4),
-    lat_d4 = round(y, 4),
+    long_d4 = round(x, 5),
+    lat_d4 = round(y, 5),
     tree_xy = paste(long_d4, lat_d4)) %>% 
   filter(!is.na(x) ) %>% 
   dplyr::select(tree_n_core, tree_n_snap, site_n_core, tree_n_snap, site_name, site_type, tree_xy) %>% distinct() %>% 
@@ -721,55 +721,77 @@ ggplot(pd2, aes(x = rh_f_amb, y = vpd_amb, col = temp_c_amb)) + geom_point()
 library(dlnm)
 library(splines)
 library(MASS)
+step_time_min <- 112.4394 
+# 
+# some_clear_platters <- c("pp_scanner_sampler_22_d210112", "pp_scanner_sampler_12_d210114",
+#                          "pp_scanner_sampler_14_d210114", "pp_scanner_sampler_14_d210105",
+#                          "pp_scanner_sampler_11_d210129", "pp_scanner_sampler_11_d210121",
+#                          "pp_scanner_sampler_16_d210112", "pp_scanner_sampler_19_d201230")
 
-
+unique(pd2$chunk_problem)
+unique(pd2$treatment)
 data_for_model <- pd2 %>% 
-  filter(tree_xy != "NA NA") 
+  filter(chunk_problem == "okay") %>% 
+  filter(treatment != "porch control") %>% 
+  filter(treatment != "contamination control") %>% 
+  filter(tree_xy != "NA NA") %>% 
+  #filter(scanned_file %in% some_clear_platters) %>% 
+  dplyr::select(date4, tree_xy, chunk_hr_med, pol_pix_ma_rel, y_hat_release_mean,
+                temp_c_hobo, temp_f_amb, rh_f_amb, feelslike_f_amb, Dew.Point_amb, windspeed_amb, gust_amb, wind_direction_amb, 
+                rain_hourly_amb, pressure_rel_amb,pressure_abs_amb, sol_rad_amb, temp_c_amb, es_amb, vpd_amb, vpd2_amb) %>% 
+  arrange(tree_xy, chunk_hr_med)
 
+summary(data_for_model)
 
 ## set up dlnm crossbasis object for use in glm
-max_lag <- 4
+max_lag <- 5
 vpd_lag <- crossbasis(data_for_model$vpd2_amb, lag = max_lag, 
                       #argvar=list(fun = "ns"), #"poly", degree = 3), #shape of response curve
                       argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
                       arglag = list(fun = "ns")) #shape of lag
 
-# srad_lag <- crossbasis(data_for_model$srad, lag = max_lag, 
-#                        argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
-#                        arglag = list(fun = "ns")) #shape of lag
-# 
-# rmax_lag <- crossbasis(data_for_model$rmax, lag = max_lag, 
-#                        argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
-#                        arglag = list(fun = "ns")) #shape of lag
-# 
+srad_lag <- crossbasis(data_for_model$sol_rad_amb, lag = max_lag,
+                       argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                       arglag = list(fun = "ns")) #shape of lag
+
+rmax_lag <- crossbasis(data_for_model$rh_f_amb, lag = max_lag,
+                       argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                       arglag = list(fun = "ns")) #shape of lag
+
 temp_lag <- crossbasis(data_for_model$temp_f_amb, lag = max_lag,
                        argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
                        arglag = list(fun = "ns")) #shape of lag
 
-# vs_lag <- crossbasis(data_for_model$vs, lag = max_lag, 
-#                      argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
-#                      arglag = list(fun = "ns")) #shape of lag
+vs_lag <- crossbasis(data_for_model$windspeed_amb, lag = max_lag,
+                     argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                     arglag = list(fun = "ns")) #shape of lag
+
+pr_lag <- crossbasis(data_for_model$pressure_rel_amb, lag = max_lag,
+                     argvar = list(fun = "ns"), #"poly", degree = 3), #shape of response curve
+                     arglag = list(fun = "ns")) #shape of lag
+
 
 
 #binomial glm with included variables
 model1 <- glm(pol_pix_ma_rel ~  #number of cases at a station on an observed day
-                y_hat_release_mean + 
-                #prop_open + 
+                #y_hat_release_mean + 
                 
-                vpd_lag+
-                # vpd +
+                # vpd_lag +
+                # vpd2_amb +
+                # 
                 # srad_lag +
-                # srad +
+                # sol_rad_amb +
+                # 
                 # rmax_lag +
-                # rmax +
-                temp_lag,
-                # tmmx +
-                # vs_lag,
-              #vs +
-              
-              # ns(time_after_noon, df = 3) ,
-              #  ns(time_after_sunrise, df = 3), 
-              
+                # rh_f_amb +
+                # 
+                temp_lag + #temp_f_amb +
+                # 
+                vs_lag + #windspeed_amb +
+
+                pr_lag , 
+                #pressure_rel_amb,
+
               #family = "binomial", 
               #link = "logit", #(link = "logit")(link="logit"),
               data = data_for_model)  
@@ -778,21 +800,47 @@ model1
 summary(model1) #str(model1)
 
 
-### visualize effects of vpd
-pred1_vpd <- crosspred(vpd_lag,  model1, #at = 1,
-                       at = seq(from = min(data_for_model$vpd, na.rm = TRUE), to = max(data_for_model$vpd, na.rm = TRUE), by = 0.10), 
-                       bylag = 1, cen = 0, cumul = TRUE) #str(pred1_cup)
+
+### visualize effects of temperature
+pred1_temp <- crosspred(temp_lag,  model1, #at = 1,
+                        at = seq(from = min(data_for_model$temp_f_amb, na.rm = TRUE), to = max(data_for_model$temp_f_amb, na.rm = TRUE), by = 0.10), 
+                        bylag = 1, cen = 0, cumul = TRUE) #str(pred1_cup)
 
 vpd_lag_RR <-
-  as.data.frame(pred1_vpd$cumfit) %>% mutate(vpd = pred1_vpd$predvar) %>% 
+  as.data.frame(pred1_temp$cumfit) %>% mutate(temper = pred1_temp$predvar) %>% 
   pivot_longer(., cols = contains("lag"), names_to = "lag", values_to = "RR") %>% 
   mutate(lag = as.numeric(gsub(pattern = "lag", replacement = "", x = lag))) %>% 
-  ggplot(aes(x = vpd, y = lag, z = RR)) + geom_contour_filled(bins = 10) + theme_bw() +
-  scale_fill_viridis_d(option = "plasma", direction = -1, name = "RR")    #automatically bins and turns to factor
+  ggplot(aes(x = temper, y = lag, z = RR)) + geom_contour_filled(bins = 100) + theme_bw() +
+  scale_fill_viridis_d(option = "plasma", direction = -1, name = "RR") + xlab("temperature F")   #automatically bins and turns to factor
 vpd_lag_RR
 
 
+### visualize effects of temperature
+pred1_temp <- crosspred(temp_lag,  model1, #at = 1,
+                       at = seq(from = min(data_for_model$temp_f_amb, na.rm = TRUE), to = max(data_for_model$temp_f_amb, na.rm = TRUE), by = 0.10), 
+                       bylag = 1, cen = 0, cumul = TRUE) #str(pred1_cup)
 
+vpd_lag_RR <-
+  as.data.frame(pred1_temp$cumfit) %>% mutate(vpd = pred1_temp$predvar) %>% 
+  pivot_longer(., cols = contains("lag"), names_to = "lag", values_to = "RR") %>% 
+  mutate(lag = as.numeric(gsub(pattern = "lag", replacement = "", x = lag))) %>% 
+  ggplot(aes(x = vpd, y = lag, z = RR)) + geom_contour_filled(bins = 10) + theme_bw() +
+  scale_fill_viridis_d(option = "plasma", direction = -1, name = "RR") + xlab("temperature F")   #automatically bins and turns to factor
+vpd_lag_RR
+
+### visualize effects of pressure
+pred1_pressure <- crosspred(pr_lag,  model1, #at = 1,
+                        at = seq(from = min(data_for_model$pressure_rel_amb, na.rm = TRUE), to = max(data_for_model$pressure_rel_amb, na.rm = TRUE), by = 0.10), 
+                        bylag = 1, cen = 0, cumul = TRUE) #str(pred1_cup)
+
+pressure_lag_RR <-
+  as.data.frame(pred1_pressure$cumfit) %>% mutate(pressure = pred1_pressure$predvar) %>% 
+  pivot_longer(., cols = contains("lag"), names_to = "lag", values_to = "RR") %>% 
+  mutate(lag = as.numeric(gsub(pattern = "lag", replacement = "", x = lag))) %>% 
+  ggplot(aes(x = pressure, y = lag, z = RR)) + geom_contour_filled(bins = 10) + theme_bw() +
+  scale_fill_viridis_d(option = "plasma", direction = -1, name = "RR") + xlab("pressure")   #automatically bins and turns to factor
+pressure_lag_RR
+#
 
 
 
