@@ -196,18 +196,18 @@ rotation_time_sec <- (((step_time_min * n_slots)/60)/24) * 24 * 60 * 60 #rotatio
 
 
 #temporary data vis for kent
-result_csvs %>% mutate(
-  sampler = substring(files_to_scan, 1, 23),
-  time_chunk_raw = substring(files_to_scan, 31, 32),
-  time_chunk = as.numeric(gsub(pattern = "_", replacement = "", x = time_chunk_raw))
-) %>% 
-  ggplot(aes(x = time_chunk, y = pol_pix_n, col = sampler)) + geom_line() + theme_bw()
 
 
-result_csvs <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results_ragweed"), full.names = TRUE) %>%  
+result_csvs_raw <- dir(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "classification_chunk_results"), full.names = TRUE) %>%  
                 map_dfr(.x = ., .f = read_csv) 
+
+result_csvs_raw %>% mutate(
+  sampler = substring(Slice, 1, 23),
+  time_chunk_raw = substring(Slice, 31, 32),
+  time_chunk = as.numeric(gsub(pattern = "_", replacement = "", x = time_chunk_raw))) %>% 
+  ggplot(aes(x = time_chunk, y = Count, col = sampler)) + geom_point() + theme_bw()
   
-result_csvs <- result_csvs %>% 
+result_csvs <- result_csvs_raw %>% 
               rename_with(make.names) %>% 
               mutate(time_period = gsub(pattern = ".*_", replacement = "", x = Slice),
                      time_period = as.numeric(gsub(pattern = ".tif", replacement = "", x = time_period)),
@@ -220,7 +220,7 @@ result_csvs <- result_csvs %>%
 # result_csvs %>% 
 #   ggplot(aes(x = time_period, y = Count)) + geom_point() + geom_line() + theme_bw()
 
-pol_dep_raw <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle) %>% #time_period, timestep_start, timestep_end) %>% 
+pol_dep_raw <- deployment_sheet %>% dplyr::select(scanned_file_name, sampler, sampler_start_date_time, species, deployment_time, retrieval_time, retreival_angle, day_temp, night_temp) %>% #time_period, timestep_start, timestep_end) %>% 
             left_join(., result_csvs)
 
 
@@ -318,6 +318,10 @@ pd <- pd %>%
                                 time_period >= 24 ~ "day 2"))
 #compare observed angle to calculated angle 
 
+
+#write_csv(pd, here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "pd_plantago_221104.csv"))
+#pd <- read_csv(here("Cornell", "mentoring", "student projects", "summer 2022", "Kent pollen catcher", "Labkit_classifications", "pd_plantago_221104.csv"))
+
 pd %>% 
   filter(species == "plantain") %>% 
   ggplot(aes(x = chunk_hr_med , y = Count, group = scanned_file_name, col = chunk_problem)) + geom_line() 
@@ -351,4 +355,23 @@ pd %>%
   geom_vline(xintercept = mdy_hm("6/2/22 18:00"), color = "blue") +
   geom_vline(xintercept = mdy_hm("6/3/22 6:00"), color = "yellow") +
   geom_vline(xintercept = mdy_hm("6/3/22 18:00"), color = "blue") 
+
+
+#figure of patterns over time of day as a function of temperature treatment
+pd %>% 
+  filter(deployment_time > mdy_hm("7/17/22 9:00")) %>% 
+  filter(deployment_time < mdy_hm("8/17/22 9:00")) %>% 
+  filter(species == "plantain") %>% 
+  filter(retreival_angle_dif < 4) %>% 
+  #filter(chunk_problem == "okay") %>% 
+  #filter(time_period < 12) %>% 
+  group_by(day_temp, chunk_hr ) %>% 
+  #summarize(pol_pix_ma24_rel_mean = mean(pol_pix_ma24_rel)) %>% 
+  ggplot(aes(x = chunk_hr , y = pol_pix_ma48_rel, col = as.factor(day_temp))) +  ggthemes::theme_few() + geom_point(alpha = 0.2) + #facet_wrap(~scanned_file_name, scales = "free_y") +
+  scale_color_manual(values = c("blue", "red"), name = "daytime temperature (F)") + 
+geom_smooth() +
+  annotate("rect", xmin=6, xmax= 18, ymin=0, ymax=Inf, alpha=0.1, fill="yellow") +
+  xlab("hour") + ylab("relative pollen release")
+
+
 
